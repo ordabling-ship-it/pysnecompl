@@ -47,11 +47,17 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [clickPos, setClickPos] = useState<{lat: number, lng: number} | null>(null);
+  const [saved, setSaved] = useState(false);
   
   // New marker form
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newImg, setNewImg] = useState<string | null>(null);
+
+  const showSaved = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -141,6 +147,7 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
         queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetStatsQueryKey() });
         toast({ title: "Skarb dodany!" });
+        showSaved();
         setIsSheetOpen(false);
         setNewTitle("");
         setNewDesc("");
@@ -155,6 +162,7 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
         queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetStatsQueryKey() });
         toast({ title: "Skarb usunięty" });
+        showSaved();
       }
     });
   };
@@ -228,10 +236,19 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
 
             <div className="bg-white/95 backdrop-blur shadow-lg rounded-lg flex flex-col pointer-events-auto border border-green-100 max-h-[500px] overflow-hidden">
               <div className="p-3 border-b flex justify-between items-center bg-green-50/50">
-                <h3 className="font-bold text-sm text-green-900 uppercase tracking-wider">Skarby</h3>
-                <Button variant="ghost" size="icon" className="w-6 h-6 h-6" onClick={() => queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() })}>
-                  <RefreshCcw className="w-3 h-3 text-green-700" />
-                </Button>
+                <h3 className="font-bold text-sm text-green-900 uppercase tracking-wider">
+                  Skarby ({markers.length})
+                </h3>
+                <div className="flex items-center gap-2">
+                  {saved && (
+                    <span className="text-xs font-bold text-green-600 animate-in fade-in duration-200">
+                      ✓ Zapisano
+                    </span>
+                  )}
+                  <Button variant="ghost" size="icon" className="w-6 h-6" onClick={() => queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() })}>
+                    <RefreshCcw className="w-3 h-3 text-green-700" />
+                  </Button>
+                </div>
               </div>
               <ScrollArea className="flex-1 p-2">
                 <div className="space-y-2">
@@ -243,7 +260,7 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
                           <span className={`font-semibold ${isExpired ? 'text-gray-500' : 'text-green-900'}`}>
                             {m.title} {isExpired && "(Wygasły)"}
                           </span>
-                          <Button variant="ghost" size="icon" className="w-6 h-6 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 transition-opacity" onClick={(e) => { e.stopPropagation(); handleDeleteMarker(m.id); }}>
+                          <Button variant="ghost" size="icon" className="w-6 h-6 text-red-400 hover:text-red-700 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); handleDeleteMarker(m.id); }}>
                             <Trash2 className="w-3 h-3" />
                           </Button>
                         </div>

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>Treasure Hunt – Szczecin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f4f0;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+#authWrap,#adminAuthWrap{display:flex;align-items:center;justify-content:center;min-height:100dvh;background:linear-gradient(160deg,#0f4c35 0%,#1a7a55 60%,#f5c842 100%);padding:16px}
+.auth-card{background:#fff;border-radius:20px;padding:28px 22px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:13px;box-shadow:0 8px 40px rgba(0,0,0,0.18)}
+.auth-logo{width:60px;height:60px;background:#f5c842;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 2px}
+.auth-title{font-size:22px;font-weight:700;color:#111;text-align:center}
+.auth-sub{font-size:13px;color:#888;text-align:center;line-height:1.5}
+.fgroup{display:flex;flex-direction:column;gap:5px}
+.flabel{font-size:12px;color:#555;font-weight:600}
+.finput{padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;color:#111;background:#f9fafb;width:100%;outline:none;transition:border-color .2s}
+.finput:focus{border-color:#1D9E75;background:#fff}
+.btn-main{width:100%;padding:13px;background:#1D9E75;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}
+.btn-main:hover{background:#0f6e56}
+.btn-gold{background:#f5c842;color:#7a4f00}
+.btn-gold:hover{background:#e0b030}
+.err-box{font-size:12px;color:#dc2626;background:#fef2f2;padding:8px 12px;border-radius:8px;display:none}
+.auth-hint{font-size:11px;color:#bbb;text-align:center;line-height:1.8}
+#app{display:none;flex-direction:column;height:100dvh}
+.topbar{background:#fff;border-bottom:1px solid #e5e7eb;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;z-index:1001;flex-shrink:0}
+.tl{display:flex;align-items:center;gap:8px}
+.tlogo{font-size:22px}
+.ttitle{font-size:15px;font-weight:700;color:#111}
+.rbadge{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:700}
+.rb-admin{background:#fef3c7;color:#92400e}
+.rb-user{background:#dbeafe;color:#1e40af}
+.btn-out{padding:6px 11px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;cursor:pointer;background:#fff;color:#555;font-weight:600}
+.admin-tools{display:none;align-items:center;gap:6px}
+.admin-search{padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;min-width:140px}
+.btn-mini{padding:6px 9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;cursor:pointer;background:#fff;color:#555;font-weight:600}
+#mapWrap{flex:1;position:relative;overflow:hidden}
+#map{width:100%;height:100%}
+.toast{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(20,20,30,.92);color:#fff;padding:10px 22px;border-radius:30px;font-size:13px;font-weight:600;z-index:3000;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;max-width:92vw;text-align:center}
+.toast.show{opacity:1}
+.map-hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:6px 14px;border-radius:20px;pointer-events:none;z-index:500;white-space:nowrap}
+#adminPanel{position:absolute;top:10px;right:10px;width:210px;background:#fff;border-radius:14px;border:1px solid #e5e7eb;padding:12px;z-index:1000;max-height:calc(100% - 20px);display:none;flex-direction:column;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+.panel-hdr{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;flex-shrink:0}
+.admin-list{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px}
+.aitem{background:#f9fafb;border-radius:9px;padding:8px 9px;cursor:pointer;transition:all .15s;position:relative}
+.aitem:hover{background:#fef9e7}
+.aitem.expired{opacity:0.6;filter:grayscale(1)}
+.aitem-name{font-size:12px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;justify-content:space-between;align-items:center}
+.aitem-coords{font-size:10px;color:#bbb;margin-top:1px}
+.cpill{display:inline-block;margin-top:5px;font-size:11px;font-family:'Courier New',monospace;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:5px;font-weight:700;letter-spacing:1px}
+.aitem-img{width:100%;height:48px;object-fit:cover;border-radius:6px;margin-top:5px}
+.del-btn{background:#fee2e2;color:#dc2626;border:none;border-radius:5px;font-size:10px;padding:2px 6px;cursor:pointer;font-weight:700;flex-shrink:0;margin-left:4px}
+.del-btn:hover{background:#fca5a5}
+#userBottom{display:none;background:#fff;border-top:1px solid #e5e7eb;padding:12px 14px;flex-shrink:0}
+.crow{display:flex;gap:8px;margin-bottom:7px}
+.crow input{flex:1;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;color:#111;background:#f9fafb;text-transform:uppercase;outline:none}
+.crow input:focus{border-color:#f5c842;background:#fff}
+.btn-unlock{padding:11px 16px;background:#f5c842;color:#7a4f00;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
+.stat-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#aaa}
+.stat-v{font-weight:700;color:#d4a017}
+#modalOv{display:none;position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:flex-end;justify-content:center}
+#modalOv.open{display:flex}
+.msheet{background:#fff;border-radius:20px 20px 0 0;padding:18px 18px 30px;width:100%;max-width:480px;display:flex;flex-direction:column;gap:11px}
+.mhandle{width:40px;height:4px;background:#e5e7eb;border-radius:2px;margin:0 auto 4px}
+.mtitle{font-size:17px;font-weight:700;color:#111}
+.mcoords{font-size:11px;color:#aaa;margin-top:-7px}
+.code-box{background:#fef9e7;border:2px dashed #f5c842;border-radius:10px;padding:12px;text-align:center;font-size:26px;font-family:'Courier New',monospace;font-weight:700;color:#92400e;letter-spacing:4px}
+.upload-area{border:2px dashed #e5e7eb;border-radius:10px;padding:14px;text-align:center;cursor:pointer;transition:border-color .2s;position:relative;min-height:64px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px}
+.upload-area:hover{border-color:#1D9E75}
+.upload-area input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-text{font-size:13px;color:#aaa;pointer-events:none}
+.preview-img{width:100%;max-height:120px;object-fit:cover;border-radius:8px}
+.mbtns{display:flex;gap:10px;margin-top:4px}
+.btn-cancel{flex:1;padding:12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;background:#fff;color:#666}
+.btn-save{flex:2;padding:12px;background:#1D9E75;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer}
+.leaflet-popup-content-wrapper{border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:0;overflow:hidden}
+.leaflet-popup-content{margin:0;padding:0}
+.popup-img{width:100%;height:100px;object-fit:cover;display:block}
+.pbody{padding:10px 12px}
+.ptitle{font-size:14px;font-weight:700;color:#111;margin-bottom:3px}
+.pdesc{font-size:12px;color:#777;margin-bottom:7px}
+.pcode{display:inline-block;font-size:12px;font-family:'Courier New',monospace;font-weight:700;background:#fef3c7;color:#92400e;padding:3px 9px;border-radius:6px;letter-spacing:1px}
+.pok{display:inline-block;font-size:12px;background:#dcfce7;color:#166534;padding:3px 9px;border-radius:6px;font-weight:700}
+.plock{display:inline-block;font-size:12px;background:#f3f4f6;color:#999;padding:3px 9px;border-radius:6px}
+.save-indicator{position:absolute;top:8px;right:8px;font-size:10px;color:#1D9E75;font-weight:700;opacity:0;transition:opacity .5s}
+.save-indicator.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div id="authWrap">
+  <div class="auth-card">
+    <div class="auth-logo">🪙</div>
+    <div class="auth-title">Treasure Hunt</div>
+    <div class="auth-sub">Wpisz kod skarbu, aby od razu zobaczyć lokalizację</div>
+    <div id="guestForm" style="display:flex;flex-direction:column;gap:11px">
+      <div class="fgroup">
+        <div class="flabel">Kod skarbu</div>
+        <input class="finput" id="gCode" placeholder="np. TRX7K" style="text-transform:uppercase"/>
+      </div>
+      <div class="err-box" id="guestErr">Nieprawidłowy lub wygasły kod.</div>
+      <button class="btn-main btn-gold" onclick="doGuestLogin()">Odkryj skarb</button>
+      <div class="auth-hint">Skarb jest widoczny tylko przez 1 godzinę!</div>
+      <button class="btn-main" onclick="showAdminLogin()">Panel administratora</button>
+    </div>
+  </div>
+</div>
+
+<div id="adminAuthWrap" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">🛡️</div>
+    <div class="auth-title">Logowanie admina</div>
+    <div class="auth-sub">Oddzielny dostęp do panelu administracyjnego</div>
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div class="fgroup">
+        <div class="flabel">Nazwa użytkownika lub email</div>
+        <input class="finput" id="aUser" placeholder="admin" value="admin"/>
+      </div>
+      <div class="fgroup">
+        <div class="flabel">Hasło</div>
+        <input class="finput" id="aPass" type="password" placeholder="••••••••" value="haslo123"/>
+      </div>
+      <div class="err-box" id="adminErr">Nieprawidłowe dane administratora.</div>
+      <button class="btn-main" onclick="doAdminLogin()">Zaloguj jako admin</button>
+      <button class="btn-cancel" onclick="showGuestStart()">Wróć do wpisania kodu</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="tl">
+      <span class="tlogo">🪙</span>
+      <span class="ttitle">Treasure Hunt</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px">
+      <span class="rbadge" id="roleBadge"></span>
+      <span id="uname" style="font-size:12px;color:#888;font-weight:600"></span>
+      <div class="admin-tools" id="adminTools">
+        <input id="streetSearch" class="admin-search" placeholder="Szukaj ulicy..."/>
+        <button class="btn-mini" onclick="searchStreet()">Szukaj</button>
+        <button class="btn-mini" id="toggleListBtn" onclick="toggleAdminList()">Ukryj listę</button>
+      </div>
+      <button class="btn-out" id="btnOut" onclick="doLogout()">Wyloguj</button>
+    </div>
+  </div>
+
+  <div id="mapWrap">
+    <div id="map"></div>
+    <div class="toast" id="toast"></div>
+    <div class="map-hint" id="mapHint" style="display:none">Kliknij na mapę aby dodać skarb</div>
+
+    <div id="adminPanel">
+      <div class="panel-hdr">Markery (<span id="mCount">0</span>) <span id="saveIndicator" class="save-indicator">✓ Zapisano</span></div>
+      <div class="admin-list" id="adminList"></div>
+    </div>
+
+    <div id="modalOv" onclick="ovClose(event)">
+      <div class="msheet">
+        <div class="mhandle"></div>
+        <div class="mtitle">Nowy skarb 🪙</div>
+        <div class="mcoords" id="mCoords"></div>
+        <div class="fgroup">
+          <div class="flabel">Nazwa skarbu</div>
+          <input class="finput" id="mName" placeholder="np. Brama Portowa"/>
+        </div>
+        <div class="fgroup">
+          <div class="flabel">Opis / wskazówka</div>
+          <input class="finput" id="mDesc" placeholder="np. Pod lewym filarem"/>
+        </div>
+        <div class="fgroup">
+          <div class="flabel">Zdjęcie (opcjonalne)</div>
+          <div class="upload-area">
+            <input type="file" id="imgInput" accept="image/*" onchange="onImgChange(event)"/>
+            <img id="imgPreview" class="preview-img" style="display:none"/>
+            <div class="upload-text" id="uploadText">📷 Kliknij aby dodać zdjęcie</div>
+          </div>
+        </div>
+        <div>
+          <div class="flabel" style="margin-bottom:5px">Kod dostępu (generowany automatycznie)</div>
+          <div class="code-box" id="mCode">-----</div>
+        </div>
+        <div class="mbtns">
+          <button class="btn-cancel" onclick="closeModal()">Anuluj</button>
+          <button class="btn-save" onclick="saveMarker()">Zapisz</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="userBottom">
+    <div class="crow">
+      <input type="text" id="codeIn" placeholder="Wpisz kod monety (np. TRX7K)" maxlength="6"/>
+      <button class="btn-unlock" onclick="redeemCode()">🪙 Odblokuj</button>
+    </div>
+    <div class="stat-row">
+      <span>Znalezione monety: <span class="stat-v" id="statV">0 / 0</span></span>
+      <span style="font-size:10px">© OpenStreetMap</span>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const SZCZECIN = [53.4285, 14.5528];
+const ONE_HOUR = 60 * 60 * 1000;
+const STORAGE_KEY = 'treasure_hunt_markers';
+const STORAGE_KEY_UNLOCKED = 'treasure_hunt_unlocked';
+
+let currentRole = 'guest';
+let currentUser = null;
+let map = null;
+let lMarkers = [];
+let pendingLL = null;
+let pendingCode = null;
+let pendingImg = null;
+let nextId = 100;
+let adminSearchMarker = null;
+let adminListVisible = true;
+
+const DEFAULT_MARKERS = [
+  {id:1, title:'Brama Portowa',       desc:'Pod prawym filarem',           code:'TRX7K', lat:53.4318, lng:14.5477, img:null, unlockedBy:{}, createdAt: Date.now()},
+  {id:2, title:'Wały Chrobrego',      desc:'Przy fontannie na tarasach',   code:'SCZ2M', lat:53.4362, lng:14.5432, img:null, unlockedBy:{}, createdAt: Date.now()},
+  {id:3, title:'Katedra św. Jakuba',  desc:'Obok tablicy pamiątkowej',     code:'JKB9Q', lat:53.4280, lng:14.5516, img:null, unlockedBy:{}, createdAt: Date.now()},
+  {id:4, title:'Zamek Książąt Pom.',  desc:'Przy wschodniej wieży',        code:'ZMK4F', lat:53.4306, lng:14.5500, img:null, unlockedBy:{}, createdAt: Date.now()},
+  {id:5, title:'Plac Grunwaldzki',    desc:'Pod zegarem (Test: Wygasły)',  code:'PGR8X', lat:53.4265, lng:14.5568, img:null, unlockedBy:{}, createdAt: Date.now() - (ONE_HOUR + 1000)},
+];
+
+let markers = [];
+
+const users = [
+  {id:1, name:'admin', email:'admin@demo.pl', pass:'haslo123', role:'admin'},
+];
+
+/* ---- STORAGE ---- */
+async function loadMarkersFromStorage() {
+  try {
+    const result = await window.storage.get(STORAGE_KEY, true);
+    if (result && result.value) {
+      const parsed = JSON.parse(result.value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        markers = parsed;
+        nextId = Math.max(...markers.map(m => m.id), 99) + 1;
+        return true;
+      }
+    }
+  } catch(e) {
+    // Brak danych w storage lub błąd – użyj domyślnych
+  }
+  markers = JSON.parse(JSON.stringify(DEFAULT_MARKERS));
+  await saveMarkersToStorage();
+  return false;
+}
+
+async function saveMarkersToStorage() {
+  try {
+    // Zapisujemy pinezki bez base64 zdjęć jeśli za duże (limit 5MB)
+    const toSave = markers.map(m => ({...m, img: m.img && m.img.length > 500000 ? null : m.img}));
+    await window.storage.set(STORAGE_KEY, JSON.stringify(toSave), true);
+    showSaveIndicator();
+  } catch(e) {
+    showToast('⚠️ Błąd zapisu – storage niedostępne');
+  }
+}
+
+async function loadUnlockedFromStorage(uid) {
+  try {
+    const result = await window.storage.get(STORAGE_KEY_UNLOCKED + '_' + uid, false);
+    if (result && result.value) {
+      return JSON.parse(result.value);
+    }
+  } catch(e) {}
+  return {};
+}
+
+async function saveUnlockedToStorage(uid, unlocked) {
+  try {
+    await window.storage.set(STORAGE_KEY_UNLOCKED + '_' + uid, JSON.stringify(unlocked), false);
+  } catch(e) {}
+}
+
+function showSaveIndicator() {
+  const el = document.getElementById('saveIndicator');
+  if (!el) return;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+/* ---- AUTH ---- */
+function showAdminLogin() {
+  document.getElementById('authWrap').style.display = 'none';
+  document.getElementById('adminAuthWrap').style.display = 'flex';
+}
+function showGuestStart() {
+  document.getElementById('adminAuthWrap').style.display = 'none';
+  document.getElementById('authWrap').style.display = 'flex';
+}
+
+function doAdminLogin() {
+  const id = document.getElementById('aUser').value.trim();
+  const pass = document.getElementById('aPass').value;
+  const err = document.getElementById('adminErr');
+  const admin = users.find(x => (x.name === id || x.email === id) && x.pass === pass && x.role === 'admin');
+  if (!admin) { err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  startApp(admin);
+}
+
+function doGuestLogin() {
+  const code = document.getElementById('gCode').value.trim().toUpperCase();
+  const err = document.getElementById('guestErr');
+  if (!code) { err.textContent = 'Wpisz kod skarbu.'; err.style.display = 'block'; return; }
+  const m = markers.find(x => x.code === code);
+  if (!m) { err.textContent = 'Ten kod jest nieprawidłowy.'; err.style.display = 'block'; return; }
+  if (Date.now() - m.createdAt > ONE_HOUR) { err.textContent = 'Ten skarb już wygasł!'; err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  startApp({ role: 'guest', guestCode: code, markerId: m.id });
+}
+
+function startApp(u) {
+  currentUser = u;
+  currentRole = u.role;
+  document.getElementById('authWrap').style.display = 'none';
+  document.getElementById('adminAuthWrap').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  if (u.role === 'guest') {
+    document.getElementById('roleBadge').style.display = 'none';
+    document.getElementById('uname').style.display = 'none';
+    document.getElementById('adminPanel').style.display = 'none';
+    document.getElementById('userBottom').style.display = 'none';
+    document.getElementById('mapHint').style.display = 'none';
+    document.getElementById('btnOut').textContent = 'Wyjdź';
+    document.getElementById('adminTools').style.display = 'none';
+  } else {
+    document.getElementById('roleBadge').style.display = 'inline-block';
+    document.getElementById('uname').style.display = 'inline-block';
+    document.getElementById('roleBadge').textContent = u.role === 'admin' ? 'Admin' : 'Użytkownik';
+    document.getElementById('roleBadge').className = 'rbadge ' + (u.role === 'admin' ? 'rb-admin' : 'rb-user');
+    document.getElementById('uname').textContent = u.name;
+    document.getElementById('adminPanel').style.display = u.role === 'admin' ? 'flex' : 'none';
+    document.getElementById('userBottom').style.display = u.role === 'admin' ? 'none' : 'block';
+    document.getElementById('mapHint').style.display = u.role === 'admin' ? 'block' : 'none';
+    document.getElementById('btnOut').textContent = 'Wyloguj';
+    document.getElementById('adminTools').style.display = u.role === 'admin' ? 'flex' : 'none';
+  }
+  setTimeout(initMap, 80);
+}
+
+function doLogout() {
+  if (map) { map.remove(); map = null; }
+  currentUser = null;
+  currentRole = 'guest';
+  adminSearchMarker = null;
+  adminListVisible = true;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('authWrap').style.display = 'flex';
+  document.getElementById('adminAuthWrap').style.display = 'none';
+  document.getElementById('adminTools').style.display = 'none';
+  document.getElementById('adminPanel').style.display = 'none';
+  document.getElementById('toggleListBtn').textContent = 'Ukryj listę';
+}
+
+/* ---- MAP ---- */
+function initMap() {
+  if (map) return;
+  map = L.map('map', {zoomControl:true}).setView(SZCZECIN, 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  setTimeout(() => map.invalidateSize(), 120);
+  renderMarkers();
+
+  if (currentRole === 'admin') {
+    map.on('click', function(e) {
+      pendingLL   = e.latlng;
+      pendingCode = genCode();
+      pendingImg  = null;
+      document.getElementById('mCoords').textContent = e.latlng.lat.toFixed(5)+'°N,  '+e.latlng.lng.toFixed(5)+'°E';
+      document.getElementById('mCode').textContent   = pendingCode;
+      document.getElementById('mName').value         = '';
+      document.getElementById('mDesc').value         = '';
+      document.getElementById('imgPreview').style.display = 'none';
+      document.getElementById('uploadText').style.display = 'block';
+      document.getElementById('imgInput').value      = '';
+      document.getElementById('modalOv').classList.add('open');
+    });
+  }
+}
+
+async function searchStreet() {
+  if (currentRole !== 'admin' || !map) return;
+  const q = document.getElementById('streetSearch').value.trim();
+  if (!q) { showToast('⚠️ Wpisz nazwę ulicy'); return; }
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pl&q=${encodeURIComponent(q + ', Szczecin')}`;
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) { showToast('❌ Nie znaleziono ulicy'); return; }
+    const lat = parseFloat(data[0].lat);
+    const lng = parseFloat(data[0].lon);
+    map.flyTo([lat, lng], 16);
+    if (adminSearchMarker) map.removeLayer(adminSearchMarker);
+    adminSearchMarker = L.marker([lat, lng]).addTo(map).bindPopup(`📍 ${data[0].display_name}`).openPopup();
+  } catch(e) {
+    showToast('❌ Błąd wyszukiwania ulicy');
+  }
+}
+
+function toggleAdminList() {
+  if (currentRole !== 'admin') return;
+  adminListVisible = !adminListVisible;
+  document.getElementById('adminPanel').style.display = adminListVisible ? 'flex' : 'none';
+  document.getElementById('toggleListBtn').textContent = adminListVisible ? 'Ukryj listę' : 'Pokaż listę';
+}
+
+/* ---- ICONS ---- */
+function coinIcon(found) {
+  const face   = found ? '#f5c842' : '#d1d5db';
+  const rim    = found ? '#d4a017' : '#9ca3af';
+  const shadow = found ? 'rgba(212,160,23,.4)' : 'rgba(0,0,0,.2)';
+  const sym    = found ? '★' : '?';
+  const symC   = found ? '#7a4f00' : '#6b7280';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:38px;height:38px">
+      <svg viewBox="0 0 38 38" xmlns="http://www.w3.org/2000/svg" style="width:38px;height:38px;filter:drop-shadow(0 3px 6px ${shadow})">
+        <ellipse cx="19" cy="32" rx="12" ry="4" fill="${rim}" opacity=".3"/>
+        <circle cx="19" cy="18" r="16" fill="${rim}"/>
+        <circle cx="19" cy="18" r="14" fill="${face}"/>
+        <circle cx="19" cy="18" r="11" fill="none" stroke="${rim}" stroke-width="1.5"/>
+        <text x="19" y="23" text-anchor="middle" font-size="13" font-weight="700" fill="${symC}" font-family="Georgia,serif">${sym}</text>
+      </svg></div>`,
+    iconSize:[38,38], iconAnchor:[19,34], popupAnchor:[0,-36]
+  });
+}
+
+function adminPinIcon(isExpired) {
+  const bg = isExpired ? '#9ca3af' : '#1D9E75';
+  const border = isExpired ? '#6b7280' : '#0f6e56';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:28px;height:36px;display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))">
+      <div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${bg};border:2.5px solid ${border};display:flex;align-items:center;justify-content:center">
+        <span style="transform:rotate(45deg);font-size:11px;color:#fff">✦</span>
+      </div>
+      <div style="width:2.5px;height:11px;background:${border}"></div>
+    </div>`,
+    iconSize:[28,36], iconAnchor:[14,36], popupAnchor:[0,-38]
+  });
+}
+
+/* ---- RENDER ---- */
+function renderMarkers() {
+  lMarkers.forEach(m => map.removeLayer(m));
+  lMarkers = [];
+  const uid     = currentUser ? currentUser.id : null;
+  const isAdmin = currentRole === 'admin';
+  const isGuest = currentRole === 'guest';
+  let toShow = [];
+  if (isAdmin) {
+    toShow = markers;
+  } else if (isGuest) {
+    toShow = markers.filter(m => m.id === currentUser.markerId || m.code === currentUser.guestCode);
+  } else {
+    toShow = markers.filter(m => m.unlockedBy[uid]);
+  }
+  toShow.forEach(m => {
+    const isExpired = (Date.now() - m.createdAt) > ONE_HOUR;
+    const found = isGuest ? true : !!m.unlockedBy[uid];
+    const icon  = isAdmin ? adminPinIcon(isExpired) : coinIcon(found);
+    const lm    = L.marker([m.lat, m.lng], {icon}).addTo(map);
+    let html = '';
+    if (m.img) html += `<img class="popup-img" src="${m.img}"/>`;
+    html += `<div class="pbody"><div class="ptitle">${m.title}</div><div class="pdesc">${m.desc}</div>`;
+    if (isAdmin) {
+      const cnt = Object.keys(m.unlockedBy).length;
+      html += `<span class="pcode">${m.code}</span>
+        <div style="font-size:11px;color:#aaa;margin-top:5px">Odblokowano przez ${cnt} os.</div>`;
+      if (isExpired) html += `<div style="font-size:11px;color:#dc2626;font-weight:bold;margin-top:2px">WYGASŁY</div>`;
+    } else {
+      html += found ? `<span class="pok">🪙 Moneta znaleziona!</span>` : `<span class="plock">🔒 Zablokowane</span>`;
+    }
+    html += '</div>';
+    lm.bindPopup(html, {maxWidth:240});
+    lMarkers.push(lm);
+    if (isGuest) {
+      setTimeout(() => { map.invalidateSize(); map.flyTo([m.lat, m.lng], 16); lm.openPopup(); }, 200);
+    }
+  });
+  if (isAdmin) renderAdminList();
+  updateStats();
+}
+
+function renderAdminList() {
+  const el = document.getElementById('adminList');
+  el.innerHTML = '';
+  document.getElementById('mCount').textContent = markers.length;
+  markers.forEach(m => {
+    const isExpired = (Date.now() - m.createdAt) > ONE_HOUR;
+    const d = document.createElement('div');
+    d.className = 'aitem' + (isExpired ? ' expired' : '');
+    const statusLabel = isExpired ? '<span style="color:#dc2626;font-size:10px;font-weight:normal">(Wygasły)</span>' : '';
+    let inner = `<div class="aitem-name"><span>🪙 ${m.title}</span><div style="display:flex;gap:3px;align-items:center">${statusLabel}<button class="del-btn" onclick="deleteMarker(${m.id},event)">✕</button></div></div>
+      <div class="aitem-coords">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>
+      <span class="cpill">${m.code}</span>`;
+    if (m.img) inner += `<img class="aitem-img" src="${m.img}"/>`;
+    d.innerHTML = inner;
+    d.onclick = () => map.flyTo([m.lat, m.lng], 16);
+    el.appendChild(d);
+  });
+}
+
+async function deleteMarker(id, e) {
+  e.stopPropagation();
+  markers = markers.filter(m => m.id !== id);
+  await saveMarkersToStorage();
+  renderMarkers();
+  showToast('🗑️ Pinezka usunięta');
+}
+
+function updateStats() {
+  const el = document.getElementById('statV');
+  if (!el || !currentUser || currentRole === 'guest') return;
+  const uid = currentUser.id;
+  const u = markers.filter(m => m.unlockedBy[uid]).length;
+  el.textContent = u + ' / ' + markers.length;
+}
+
+/* ---- REDEEM ---- */
+async function redeemCode() {
+  const val = document.getElementById('codeIn').value.trim().toUpperCase();
+  if (!val) { showToast('⚠️ Wpisz kod monety'); return; }
+  const m = markers.find(x => x.code === val);
+  if (!m) { showToast('❌ Nieprawidłowy kod'); return; }
+  if (Date.now() - m.createdAt > ONE_HOUR) { showToast('❌ Ten skarb już wygasł!'); return; }
+  const uid = currentUser.id;
+  if (m.unlockedBy[uid]) { showToast('ℹ️ Ta moneta już odblokowana!'); return; }
+  m.unlockedBy[uid] = Date.now();
+  await saveMarkersToStorage();
+  document.getElementById('codeIn').value = '';
+  renderMarkers();
+  map.flyTo([m.lat, m.lng], 16);
+  showToast('🪙 Znaleziono: ' + m.title + '!');
+}
+
+/* ---- MODAL ---- */
+function onImgChange(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    pendingImg = ev.target.result;
+    const prev = document.getElementById('imgPreview');
+    prev.src = pendingImg;
+    prev.style.display = 'block';
+    document.getElementById('uploadText').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+function ovClose(e) { if (e.target === document.getElementById('modalOv')) closeModal(); }
+function closeModal() { document.getElementById('modalOv').classList.remove('open'); }
+
+async function saveMarker() {
+  const title = document.getElementById('mName').value.trim() || 'Nowy skarb';
+  const desc  = document.getElementById('mDesc').value.trim() || '';
+  const newMarker = {
+    id: nextId++, title, desc,
+    code: pendingCode,
+    lat: pendingLL.lat, lng: pendingLL.lng,
+    img: pendingImg,
+    unlockedBy: {},
+    createdAt: Date.now()
+  };
+  markers.push(newMarker);
+  await saveMarkersToStorage();
+  closeModal();
+  renderMarkers();
+  showToast('✅ Dodano! Kod: ' + pendingCode);
+}
+
+/* ---- HELPERS ---- */
+function genCode() { return Math.random().toString(36).substring(2,7).toUpperCase(); }
+let tTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  if (tTimer) clearTimeout(tTimer);
+  tTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+/* ---- INIT ---- */
+(async function() {
+  await loadMarkersFromStorage();
+})();
+</script>
+</body>
+</html>
