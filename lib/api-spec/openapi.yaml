@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Treasure Hunt Szczecin API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: markers
+    description: Treasure marker operations
+  - name: auth
+    description: Authentication operations
+  - name: redemptions
+    description: Code redemption operations
 paths:
   /healthz:
     get:
@@ -24,6 +30,215 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/admin-login:
+    post:
+      operationId: adminLogin
+      tags: [auth]
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginBody"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/guest-login:
+    post:
+      operationId: guestLogin
+      tags: [auth]
+      summary: Guest login via treasure code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestLoginBody"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAuthResponse"
+        "401":
+          description: Invalid or expired code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /markers:
+    get:
+      operationId: listMarkers
+      tags: [markers]
+      summary: List all markers (admin only)
+      responses:
+        "200":
+          description: List of markers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Marker"
+    post:
+      operationId: createMarker
+      tags: [markers]
+      summary: Create a new treasure marker (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMarkerBody"
+      responses:
+        "201":
+          description: Created marker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Marker"
+
+  /markers/{id}:
+    get:
+      operationId: getMarker
+      tags: [markers]
+      summary: Get a marker by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Marker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Marker"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteMarker
+      tags: [markers]
+      summary: Delete a marker (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /markers/by-code/{code}:
+    get:
+      operationId: getMarkerByCode
+      tags: [markers]
+      summary: Get a marker by treasure code (for guests)
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Marker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Marker"
+        "404":
+          description: Not found or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /redemptions:
+    get:
+      operationId: listRedemptions
+      tags: [redemptions]
+      summary: List redemptions for a user
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of redemptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Redemption"
+    post:
+      operationId: createRedemption
+      tags: [redemptions]
+      summary: Redeem a treasure code (regular user)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRedemptionBody"
+      responses:
+        "201":
+          description: Redeemed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Redemption"
+        "400":
+          description: Already redeemed, expired, or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [markers]
+      summary: Get overall stats (admin view)
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +249,165 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    AdminLoginBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    GuestLoginBody:
+      type: object
+      properties:
+        code:
+          type: string
+      required:
+        - code
+
+    AuthResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+      required:
+        - id
+        - name
+        - role
+
+    GuestAuthResponse:
+      type: object
+      properties:
+        markerId:
+          type: integer
+        code:
+          type: string
+        markerTitle:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+      required:
+        - markerId
+        - code
+        - markerTitle
+        - lat
+        - lng
+
+    Marker:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        code:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        imageUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        expiresAt:
+          type: string
+        redemptionCount:
+          type: integer
+      required:
+        - id
+        - title
+        - description
+        - code
+        - lat
+        - lng
+        - imageUrl
+        - createdAt
+        - expiresAt
+        - redemptionCount
+
+    CreateMarkerBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        imageUrl:
+          type: ["string", "null"]
+      required:
+        - title
+        - description
+        - lat
+        - lng
+
+    Redemption:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        markerId:
+          type: integer
+        markerTitle:
+          type: string
+        redeemedAt:
+          type: string
+      required:
+        - id
+        - userId
+        - markerId
+        - markerTitle
+        - redeemedAt
+
+    CreateRedemptionBody:
+      type: object
+      properties:
+        userId:
+          type: integer
+        code:
+          type: string
+      required:
+        - userId
+        - code
+
+    Stats:
+      type: object
+      properties:
+        totalMarkers:
+          type: integer
+        activeMarkers:
+          type: integer
+        expiredMarkers:
+          type: integer
+        totalRedemptions:
+          type: integer
+      required:
+        - totalMarkers
+        - activeMarkers
+        - expiredMarkers
+        - totalRedemptions
