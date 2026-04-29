@@ -273,8 +273,12 @@ components:
       properties:
         code:
           type: string
+        guestToken:
+          type: string
+          description: Browser-generated unique guest identifier (UUID) stored in localStorage. Used to track per-user discovery time.
       required:
         - code
+        - guestToken
 
     AuthResponse:
       type: object
@@ -303,10 +307,20 @@ components:
           type: string
         imageUrl:
           type: ["string", "null"]
+          description: Null if image has expired (more than 2h after discovery)
         lat:
           type: number
         lng:
           type: number
+        discoveredAt:
+          type: string
+          description: ISO timestamp of when this guest first discovered this treasure
+        imageExpiresAt:
+          type: string
+          description: ISO timestamp when image becomes hidden (discoveredAt + 2h)
+        imageExpired:
+          type: boolean
+          description: True if the image visibility window has elapsed
       required:
         - markerId
         - code
@@ -315,6 +329,9 @@ components:
         - imageUrl
         - lat
         - lng
+        - discoveredAt
+        - imageExpiresAt
+        - imageExpired
 
     Marker:
       type: object

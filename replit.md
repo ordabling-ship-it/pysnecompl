@@ -41,6 +41,14 @@ A full-stack geo-treasure hunt web app for Szczecin, Poland. Admins hide treasur
 - `users` — admin users (id, name, email, password_hash, role)
 - `markers` — treasure locations (id, title, description, code, lat, lng, image_url, created_at, expires_at)
 - `redemptions` — which user redeemed which code (id, user_id, marker_id, redeemed_at)
+- `guest_discoveries` — per-guest discovery time for image expiration (id, marker_id, guest_token, discovered_at). Unique on (marker_id, guest_token). `guest_token` is a browser-generated UUID stored in localStorage so the 2-hour image visibility window is per-user and survives page refreshes.
+
+## Guest image expiration
+
+- Guest treasure images are visible for **2 hours** from each guest's first discovery (per-user, not global).
+- The frontend persists `{ code }` under `th_guest_session` and the guest UUID under `th_guest_token` in localStorage.
+- On page refresh, App.tsx auto-calls `/auth/guest-login` with the saved code + guestToken; the server returns the original `discoveredAt` so the timer keeps counting.
+- The Leaflet popup updates once per second via `marker.setPopupContent()` showing `Zdjęcie dostępne do: HH:MM:SS`. After expiry, the image is replaced by a `Zdjęcie wygasło` placeholder and the server stops returning `imageUrl`.
 
 ## Admin credentials
 

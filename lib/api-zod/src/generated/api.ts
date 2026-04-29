@@ -34,6 +34,11 @@ export const AdminLoginResponse = zod.object({
  */
 export const GuestLoginBody = zod.object({
   code: zod.string(),
+  guestToken: zod
+    .string()
+    .describe(
+      "Browser-generated unique guest identifier (UUID) stored in localStorage. Used to track per-user discovery time.",
+    ),
 });
 
 export const GuestLoginResponse = zod.object({
@@ -41,9 +46,23 @@ export const GuestLoginResponse = zod.object({
   code: zod.string(),
   markerTitle: zod.string(),
   markerDescription: zod.string(),
-  imageUrl: zod.string().nullable(),
+  imageUrl: zod
+    .string()
+    .nullable()
+    .describe("Null if image has expired (more than 2h after discovery)"),
   lat: zod.number(),
   lng: zod.number(),
+  discoveredAt: zod
+    .string()
+    .describe(
+      "ISO timestamp of when this guest first discovered this treasure",
+    ),
+  imageExpiresAt: zod
+    .string()
+    .describe("ISO timestamp when image becomes hidden (discoveredAt + 2h)"),
+  imageExpired: zod
+    .boolean()
+    .describe("True if the image visibility window has elapsed"),
 });
 
 /**

@@ -20,6 +20,8 @@ export interface AdminLoginBody {
 
 export interface GuestLoginBody {
   code: string;
+  /** Browser-generated unique guest identifier (UUID) stored in localStorage. Used to track per-user discovery time. */
+  guestToken: string;
 }
 
 export interface AuthResponse {
@@ -33,10 +35,19 @@ export interface GuestAuthResponse {
   code: string;
   markerTitle: string;
   markerDescription: string;
-  /** @nullable */
+  /**
+   * Null if image has expired (more than 2h after discovery)
+   * @nullable
+   */
   imageUrl: string | null;
   lat: number;
   lng: number;
+  /** ISO timestamp of when this guest first discovered this treasure */
+  discoveredAt: string;
+  /** ISO timestamp when image becomes hidden (discoveredAt + 2h) */
+  imageExpiresAt: string;
+  /** True if the image visibility window has elapsed */
+  imageExpired: boolean;
 }
 
 export interface Marker {

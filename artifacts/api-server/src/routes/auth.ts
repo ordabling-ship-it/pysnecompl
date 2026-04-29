@@ -1,13 +1,15 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { db, usersTable, markersTable, guestDiscoveriesTable } from "@workspace/db";
 import {
   AdminLoginBody,
   GuestLoginBody,
 } from "@workspace/api-zod";
-import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+// Image visibility window: 2 hours from the moment a guest discovers a treasure
+const IMAGE_TTL_MS = 2 * 60 * 60 * 1000;
 
 router.post("/auth/admin-login", async (req, res): Promise<void> => {
   const parsed = AdminLoginBody.safeParse(req.body);
@@ -44,11 +46,8 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     return;
   }
 
-  const { code } = parsed.data;
+  const { code, guestToken } = parsed.data;
   const upperCode = code.toUpperCase();
-
-  const { markersTable } = await import("@workspace/db");
-  const { eq, gt } = await import("drizzle-orm");
 
   const [marker] = await db
     .select()
@@ -65,15 +64,44 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     return;
   }
 
+  // Per-user discovery tracking: get-or-create a discovery row for this (marker, guestToken).
+  // The discoveredAt timestamp is set ONCE on first discovery and never updated, so the
+  // 2-hour image visibility window survives page refreshes and re-logins.
+  let [discovery] = await db
+    .select()
+    .from(guestDiscoveriesTable)
+    .where(
+      and(
+        eq(guestDiscoveriesTable.markerId, marker.id),
+        eq(guestDiscoveriesTable.guestToken, guestToken)
+      )
+    );
+
+  if (!discovery) {
+    [discovery] = await db
+      .insert(guestDiscoveriesTable)
+      .values({ markerId: marker.id, guestToken })
+      .returning();
+    req.log.info({ markerId: marker.id, guestToken }, "New guest discovery recorded");
+  }
+
+  // Compute server-authoritative expiration. Image is hidden after 2h.
+  const discoveredAt = new Date(discovery.discoveredAt);
+  const imageExpiresAt = new Date(discoveredAt.getTime() + IMAGE_TTL_MS);
+  const imageExpired = new Date() > imageExpiresAt;
+
   req.log.info({ markerId: marker.id }, "Guest logged in with code");
   res.json({
     markerId: marker.id,
     code: marker.code,
     markerTitle: marker.title,
     markerDescription: marker.description,
-    imageUrl: marker.imageUrl ?? null,
+    imageUrl: imageExpired ? null : (marker.imageUrl ?? null),
     lat: marker.lat,
     lng: marker.lng,
+    discoveredAt: discoveredAt.toISOString(),
+    imageExpiresAt: imageExpiresAt.toISOString(),
+    imageExpired,
   });
 });
 

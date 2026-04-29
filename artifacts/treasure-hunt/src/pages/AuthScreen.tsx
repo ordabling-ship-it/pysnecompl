@@ -1,15 +1,16 @@
-import { useState, useEffect } from "react";
-import { useAdminLogin, useGuestLogin, useListMarkers, useGetStats } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useAdminLogin, useGuestLogin } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Key, User, ArrowLeft, Coins } from "lucide-react";
+import { getOrCreateGuestToken, type GuestData } from "@/App";
 
 type AuthScreenProps = {
   onLoginAdmin: (user: { id: number; name: string; role: string }) => void;
-  onLoginGuest: (guestData: { markerId: number; code: string; markerTitle: string; markerDescription: string; imageUrl: string | null; lat: number; lng: number }) => void;
+  onLoginGuest: (guestData: GuestData) => void;
 };
 
 export default function AuthScreen({ onLoginAdmin, onLoginGuest }: AuthScreenProps) {
@@ -25,8 +26,9 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest }: AuthScreenPro
   const handleGuestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!code) return;
+    const guestToken = getOrCreateGuestToken();
     guestLogin.mutate(
-      { data: { code: code.toUpperCase() } },
+      { data: { code: code.toUpperCase(), guestToken } },
       {
         onSuccess: (data) => {
           onLoginGuest(data);

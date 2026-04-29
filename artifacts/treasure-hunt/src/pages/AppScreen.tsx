@@ -9,6 +9,7 @@ import {
   getListMarkersQueryKey,
   getGetStatsQueryKey,
 } from "@workspace/api-client-react";
+import type { GuestData } from "@/App";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -92,17 +93,52 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 type AppScreenProps = {
   user: { id: number; name: string; role: string } | null;
-  guestData: {
-    markerId: number;
-    code: string;
-    markerTitle: string;
-    markerDescription: string;
-    imageUrl: string | null;
-    lat: number;
-    lng: number;
-  } | null;
+  guestData: GuestData | null;
   onLogout: () => void;
 };
+
+// Format milliseconds as HH:MM:SS for the image-visibility countdown
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return "00:00:00";
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+// Build the inner HTML of the guest treasure popup. Re-rendered every second
+// so the countdown updates and the image swaps to "Zdjęcie wygasło" on time.
+function buildGuestPopupHtml(g: GuestData, nowMs: number): string {
+  const expiresMs = new Date(g.imageExpiresAt).getTime();
+  const remaining = expiresMs - nowMs;
+  const expired = g.imageExpired || remaining <= 0;
+
+  const imageBlock = expired
+    ? `<div class="w-full h-24 mb-2 flex items-center justify-center bg-gray-100 text-gray-500 text-sm italic rounded border border-dashed border-gray-300">Zdjęcie wygasło</div>`
+    : g.imageUrl
+      ? `<img src="${g.imageUrl}" class="w-full h-24 object-cover rounded mb-2"/>`
+      : "";
+
+  const timerBlock = expired
+    ? `<div class="text-xs text-red-600 font-semibold mt-1">⏱️ Zdjęcie wygasło</div>`
+    : `<div class="text-xs text-gray-500 mt-1">⏱️ Zdjęcie dostępne do: <span class="font-mono font-semibold text-amber-700">${formatRemaining(remaining)}</span></div>`;
+
+  return `
+    <div class="p-2 min-w-[230px]">
+      ${imageBlock}
+      <h3 class="font-bold text-base text-amber-600">${g.markerTitle}</h3>
+      <p class="text-sm text-gray-700 mt-1 italic">💡 ${g.markerDescription}</p>
+      <span class="inline-block mt-2 px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold uppercase">Moneta znaleziona!</span>
+      ${timerBlock}
+      <button onclick="window.__thNavigate(${g.lat}, ${g.lng})"
+        class="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-3 rounded flex items-center justify-center gap-1">
+        🧭 Nawiguj
+      </button>
+    </div>
+  `;
+}
 
 export default function AppScreen({ user, guestData, onLogout }: AppScreenProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -184,6 +220,20 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
     };
   }, []);
 
+  // Tick the guest popup once per second so the "Zdjęcie dostępne do: HH:MM:SS"
+  // countdown stays live and the image swaps to "Zdjęcie wygasło" on expiry.
+  // setPopupContent() updates the popup in place without closing it.
+  useEffect(() => {
+    if (!guestData) return;
+    const tick = () => {
+      const marker = markersRef.current[guestData.markerId];
+      if (marker) marker.setPopupContent(buildGuestPopupHtml(guestData, Date.now()));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [guestData]);
+
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -191,24 +241,11 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
     markersRef.current = {};
 
     if (guestData) {
-      // Guest popup: title + hint (description) + Navigate button
-      const imgHtml = guestData.imageUrl
-        ? `<img src="${guestData.imageUrl}" class="w-full h-24 object-cover rounded mb-2"/>`
-        : "";
+      // Guest popup: image + countdown + title + hint + Navigate button.
+      // Initial render uses Date.now(); a separate effect ticks every second.
       const marker = L.marker([guestData.lat, guestData.lng], { icon: createIcon(goldCoinHtml) })
         .addTo(mapRef.current)
-        .bindPopup(`
-          <div class="p-2 min-w-[220px]">
-            ${imgHtml}
-            <h3 class="font-bold text-base text-amber-600">${guestData.markerTitle}</h3>
-            <p class="text-sm text-gray-700 mt-1 italic">💡 ${guestData.markerDescription}</p>
-            <span class="inline-block mt-2 px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold uppercase">Moneta znaleziona!</span>
-            <button onclick="window.__thNavigate(${guestData.lat}, ${guestData.lng})"
-              class="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 px-3 rounded flex items-center justify-center gap-1">
-              🧭 Nawiguj
-            </button>
-          </div>
-        `);
+        .bindPopup(buildGuestPopupHtml(guestData, Date.now()));
       markersRef.current[guestData.markerId] = marker;
       mapRef.current.flyTo([guestData.lat, guestData.lng], 16);
       marker.openPopup();

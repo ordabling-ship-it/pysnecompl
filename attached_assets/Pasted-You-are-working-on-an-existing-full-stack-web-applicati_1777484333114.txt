@@ -1,0 +1,86 @@
+You are working on an existing full-stack web application. Extend the current functionality. Do NOT rewrite the project.
+
+### IMAGE LIFECYCLE WITH CROPPOLA (CRITICAL LOGIC)
+
+- Images are uploaded by admin to Croppola Temporary Image Store.
+- The returned image URL is stored in the database.
+
+### NEW REQUIREMENT: IMAGE DELETION AFTER DISCOVERY
+
+- When a user correctly discovers a treasure (enters valid code):
+  - Save:
+    - discovery timestamp
+    - image URL assigned to that pin
+
+- From the moment of discovery:
+  - The image must remain accessible for EXACTLY 2 hours
+  - After 2 hours:
+    - The image should be considered expired
+    - It should no longer be visible to users
+    - Replace it in UI with:
+      "Zdjęcie wygasło"
+
+### IMPORTANT TECHNICAL NOTE
+
+- Croppola automatically deletes images (TTL-based), but this is NOT enough.
+- You must implement APP-LEVEL expiration logic:
+
+  Backend:
+  - Store discovery_time
+  - Compute expiration_time = discovery_time + 2 hours
+  - When fetching image:
+    - If current_time > expiration_time → treat image as expired
+
+  Frontend:
+  - If expired:
+    - Do NOT render image
+    - Show fallback message
+
+### OPTIONAL (RECOMMENDED)
+
+- If Croppola API allows deletion by ID:
+  - Store image ID separately
+  - After 2 hours:
+    - Trigger deletion request (cron job or delayed task)
+
+- If NOT:
+  - Just rely on expiration logic + Croppola auto cleanup
+
+---
+
+### USER UI (UPDATE)
+
+- In treasure popup:
+  - Show:
+
+    "Zdjęcie dostępne do: HH:MM:SS"
+
+  - Where time = discovery_time + 2 hours
+
+- If expired:
+  - Replace image with:
+
+    "Zdjęcie wygasło"
+
+---
+
+### EDGE CASES
+
+- Page refresh:
+  - Expiration must still work (server-side validation required)
+
+- Multiple users discovering same treasure:
+  - Expiration should be tracked PER USER (important)
+
+---
+
+### SUMMARY REQUIREMENT
+
+- Image visibility window:
+  → starts: when user discovers treasure  
+  → ends: exactly 2 hours later  
+- After that:
+  → image hidden  
+  → fallback message shown  
+
+Do not break existing logic. Keep code modular.
