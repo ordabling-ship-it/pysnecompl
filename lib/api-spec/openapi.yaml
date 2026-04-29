@@ -299,6 +299,10 @@ components:
           type: string
         markerTitle:
           type: string
+        markerDescription:
+          type: string
+        imageUrl:
+          type: ["string", "null"]
         lat:
           type: number
         lng:
@@ -307,6 +311,8 @@ components:
         - markerId
         - code
         - markerTitle
+        - markerDescription
+        - imageUrl
         - lat
         - lng
 

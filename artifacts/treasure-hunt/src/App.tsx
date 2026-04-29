@@ -11,7 +11,7 @@ const queryClient = new QueryClient();
 
 function MainApp() {
   const [user, setUser] = useState<{ id: number; name: string; role: string } | null>(null);
-  const [guestData, setGuestData] = useState<{ markerId: number; code: string; markerTitle: string; lat: number; lng: number } | null>(null);
+  const [guestData, setGuestData] = useState<{ markerId: number; code: string; markerTitle: string; markerDescription: string; imageUrl: string | null; lat: number; lng: number } | null>(null);
 
   const handleLogout = () => {
     setUser(null);

@@ -32,6 +32,9 @@ export interface GuestAuthResponse {
   markerId: number;
   code: string;
   markerTitle: string;
+  markerDescription: string;
+  /** @nullable */
+  imageUrl: string | null;
   lat: number;
   lng: number;
 }

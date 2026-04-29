@@ -1,0 +1,67 @@
+You are working on an existing web application (full-stack: frontend + backend). Modify the current project by implementing the following features and fixes. Do NOT rewrite the whole app — extend and update the existing codebase.
+
+1. ADMIN MOBILE UI CONTROLS
+- Detect when admin is using a mobile device (responsive check or user agent).
+- Add an option (toggle or settings flag) that allows the admin to hide:
+  - "Statistics" tab
+  - "Treasures" tab
+- This should only affect visibility on mobile devices, not desktop.
+
+2. TREASURE HINT VISIBILITY
+- Currently, admin can create a hint/description ("wskazówka opis").
+- Modify logic so that:
+  - The hint is ALSO visible to the user who has found the treasure.
+  - Ensure proper permission check: only users who found the treasure can see it (not all users).
+
+3. IMAGE UPLOAD FIX + OPTIMIZATION
+- Fix the image upload feature if it is currently broken.
+- Add server-side or client-side image processing:
+  - Compress images as much as possible (use libraries like sharp, Pillow, or browser canvas).
+  - Resize all uploaded images to VGA resolution: 640x480.
+  - Maintain aspect ratio (crop or fit if needed).
+  - Optimize for smallest file size without breaking usability.
+
+4. AUTO-COPY PIN CODE AFTER CREATION
+- After creating a new map pin ("pinezka"):
+  - Automatically copy its generated code to clipboard.
+  - Use modern clipboard API (navigator.clipboard.writeText).
+  - Provide fallback for older browsers if needed.
+  - Show a small UI confirmation (e.g. toast: "Code copied to clipboard").
+
+5. GOOGLE MAPS NAVIGATION BUTTON
+- For users who found a pin:
+  - Add a button: "Navigate".
+  - On click:
+    - Open Google Maps with exact coordinates of the pin.
+    - Use format:
+      https://www.google.com/maps/dir/?api=1&destination=LAT,LNG
+  - Allow navigation by foot or car (default Google behavior is fine).
+
+6. ADDRESS SEARCH (ADMIN ONLY)
+- Add a search input visible ONLY to admin.
+- Integrate map geocoding (e.g. Google Maps API or OpenStreetMap/Nominatim):
+  - Admin can type a street name.
+  - Map centers on that location.
+  - Optionally allow selecting result to place a pin.
+
+7. TOKEN EXPIRATION VISUALIZATION
+- When a user enters a token:
+  - Store timestamp of submission.
+- After 1 hour:
+  - For admin:
+    - Token becomes greyed out (disabled/visually faded).
+  - For user:
+    - Token is no longer visible at all.
+- Implement this both:
+  - In backend logic (time validation)
+  - In frontend rendering (conditional display)
+
+GENERAL REQUIREMENTS:
+- Keep code clean and modular.
+- Do not break existing functionality.
+- Add comments where logic is non-obvious.
+- Reuse existing components where possible.
+- Ensure security (no exposing admin-only features to users).
+- Make UI responsive and mobile-friendly.
+
+After implementing, briefly summarize what files were modified and what was added.

@@ -9,7 +9,7 @@ import { Loader2, Key, User, ArrowLeft, Coins } from "lucide-react";
 
 type AuthScreenProps = {
   onLoginAdmin: (user: { id: number; name: string; role: string }) => void;
-  onLoginGuest: (guestData: { markerId: number; code: string; markerTitle: string; lat: number; lng: number }) => void;
+  onLoginGuest: (guestData: { markerId: number; code: string; markerTitle: string; markerDescription: string; imageUrl: string | null; lat: number; lng: number }) => void;
 };
 
 export default function AuthScreen({ onLoginAdmin, onLoginGuest }: AuthScreenProps) {

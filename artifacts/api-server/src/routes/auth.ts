@@ -70,6 +70,8 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     markerId: marker.id,
     code: marker.code,
     markerTitle: marker.title,
+    markerDescription: marker.description,
+    imageUrl: marker.imageUrl ?? null,
     lat: marker.lat,
     lng: marker.lng,
   });

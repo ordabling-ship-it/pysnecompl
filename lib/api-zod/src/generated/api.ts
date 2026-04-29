@@ -40,6 +40,8 @@ export const GuestLoginResponse = zod.object({
   markerId: zod.number(),
   code: zod.string(),
   markerTitle: zod.string(),
+  markerDescription: zod.string(),
+  imageUrl: zod.string().nullable(),
   lat: zod.number(),
   lng: zod.number(),
 });
