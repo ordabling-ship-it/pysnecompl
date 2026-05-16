@@ -56,6 +56,10 @@ The application has exactly **one** countdown timer: the 60-minute marker code t
 
 The frontend persists `{ code }` under `th_guest_session` so a page refresh re-fetches the same shared timer.
 
+## Known security posture
+
+All admin-only routes (POST/DELETE `/markers`, `/stats`, `/discoveries`, `/discoveries/reset`) are currently unauthenticated at the API layer — admin gating is enforced only on the client. This matches the existing app's posture and is acceptable for the current single-tenant, demo-style deployment, but a future hardening pass should add a session-based `requireAdmin` middleware uniformly across all admin endpoints.
+
 ## Admin credentials
 
 - Username: `admin` / Password: `haslo123`

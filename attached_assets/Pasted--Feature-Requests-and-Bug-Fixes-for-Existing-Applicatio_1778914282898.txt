@@ -1,0 +1,50 @@
+# Feature Requests and Bug Fixes for Existing Application
+
+Please update the existing application by implementing the following features, UI enhancements, and bug fixes across the Admin Panel and Explorer (Odkrywca) Panel. Ensure that all new features match the existing tech stack, design system, and styling rules.
+
+---
+
+## 1. Admin Panel: Treasure List & Sidebar Updates
+* **Treasure Activation Timestamp:** In the treasure list, add a new data field display: `"Activation date: hh:mm dd/mm/yy"`.
+* **Sidebar Discovery Display:** In the Admin sidebar, replace the existing `"0 discoveries"` (`"0 odkryć"`) text with the treasure's actual activation date (using the exact same font, style, and data source as the timestamp mentioned above).
+* **Treasure List Sorting:** In the Admin sidebar "Treasures" section, sort the list by creation date so that the **newest added markers are at the top** and the oldest are at the bottom.
+
+## 2. Admin Panel: Statistics & Log System
+* **Global Discoveries Counter:** Add a new stats section named **"Discoveries"** (`"Odkrycia"`) that tracks the total sum of all correctly entered tokens by users.
+  * Must include a **Reset Button**.
+  * Display the **Last Reset Date** (`dd/mm/yy`) directly next to or below the counter.
+* **Dropdown Log Box:** Directly beneath the "Discoveries" stats section, add a collapsible dropdown log interface with the following specs:
+  * **Styling:** Small font size (approx. `6pt`) inside a yellow-background box field.
+  * **Content:** Display the **5 most recent token activations**, sorted with the newest on top.
+  * **Format per entry:** `(hh:mm:ss) — TOKEN`
+  * **Layout Summary of the Yellow Box:** 
+    * `Last reset date: dd/mm/yy`
+    * `Discoveries since reset: X`
+    * Align the Reset button to the right side of this section.
+
+## 3. Admin Panel: Map & List Interactivity
+* **Countdown Pin Behavior:** While a treasure is counting down to deactivation, its map pin/marker must **temporarily turn RED**.
+* **Map-to-List Highlighting:** Clicking any map marker must dynamically apply a bold/thickened border to the corresponding treasure item card in the right-hand sidebar list so the admin can instantly locate it.
+* **Inactive/Expired Filter Toggle:** Clicking the main Statistics Box should filter the map/list to display **only inactive or expired markers**. Clicking it a second time must clear the filter and restore the full list view.
+* **Active Filter Toggle:** Clicking the green **"ACTIVE"** stats box must filter the map to display **only active (green) markers**.
+
+## 4. Admin Panel: UI & Image Upload Enhancements
+* **Welcome Screen Scaling:** Reduce the overall font size of the message `"Logged in — welcome admin"` (`"Zalogowano — witaj admin"`) and shrink the physical dimensions of the welcome modal window by approximately **50%**.
+* **Sidebar Minimize Button:** Adjust the position of the sidebar minimization button by moving it roughly **10% lower** vertically.
+* **Image Upload UX:** Fix the image upload workflow when adding graphics:
+  * Show a small **loading spinner/icon** during the file upload process.
+  * Display a **green checkmark icon** upon a successful upload response.
+
+---
+
+## 5. Explorer Panel (Panel ODKRYWCY): Fixes & UI Simplification
+
+### [BUG FIX] Map Zoom/Scale Lock During Countdown
+* **Current Behavior:** During a countdown, the marker pulses and forces a position/view refresh, which overrides user input and prevents the user from zooming out or panning the map.
+* **Expected Behavior:** Remove any pulsing or forceful view/position refreshes during active countdowns. The map zoom, scale, and pan controls must remain completely unlocked and adjustable for the user at all times.
+
+### [UI Cleanup] Minimalist Timer View
+* **Change:** Modify the red countdown timer UI.
+* **Removal:** Completely remove the text label `"Remaining:"` (`"Pozostało:"`).
+* **Replacement:** Replace the entire countdown text description with **only a clock icon followed by the countdown timer** formatted as `mm:ss`.
+* **Goal:** A clean, ultra-minimalist layout showing exclusively: `[Clock Icon] mm:ss`. Do not display any additional helper labels or descriptions.

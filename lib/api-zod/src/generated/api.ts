@@ -73,7 +73,13 @@ export const ListMarkersResponseItem = zod.object({
     .string()
     .nullable()
     .describe(
-      "ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.",
+      "ISO timestamp when the code expires. Null = timer not started yet.",
+    ),
+  activatedAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO timestamp when the FIRST guest activated the code. Null = not activated yet. Set atomically together with expiresAt.",
     ),
   redemptionCount: zod.number(),
 });
@@ -110,7 +116,13 @@ export const GetMarkerResponse = zod.object({
     .string()
     .nullable()
     .describe(
-      "ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.",
+      "ISO timestamp when the code expires. Null = timer not started yet.",
+    ),
+  activatedAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO timestamp when the FIRST guest activated the code. Null = not activated yet. Set atomically together with expiresAt.",
     ),
   redemptionCount: zod.number(),
 });
@@ -142,7 +154,13 @@ export const GetMarkerByCodeResponse = zod.object({
     .string()
     .nullable()
     .describe(
-      "ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.",
+      "ISO timestamp when the code expires. Null = timer not started yet.",
+    ),
+  activatedAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO timestamp when the FIRST guest activated the code. Null = not activated yet. Set atomically together with expiresAt.",
     ),
   redemptionCount: zod.number(),
 });
@@ -169,6 +187,35 @@ export const ListRedemptionsResponse = zod.array(ListRedemptionsResponseItem);
 export const CreateRedemptionBody = zod.object({
   userId: zod.number(),
   code: zod.string(),
+});
+
+/**
+ * @summary Get the global discoveries counter, last reset date, and 5 most recent activations
+ */
+export const GetDiscoveriesResponse = zod.object({
+  count: zod
+    .number()
+    .describe("Number of marker activations since the last reset"),
+  lastResetAt: zod
+    .string()
+    .describe(
+      "ISO timestamp of the last counter reset (defaults to first server start)",
+    ),
+  recent: zod
+    .array(
+      zod.object({
+        code: zod.string(),
+        activatedAt: zod.string(),
+      }),
+    )
+    .describe("5 most recent activations since the last reset, newest first"),
+});
+
+/**
+ * @summary Reset the discoveries counter (admin only)
+ */
+export const ResetDiscoveriesResponse = zod.object({
+  lastResetAt: zod.string(),
 });
 
 /**

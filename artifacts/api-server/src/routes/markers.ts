@@ -26,12 +26,17 @@ function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, cou
     createdAt: marker.createdAt.toISOString(),
     // Null until the first guest enters the code (then it's NOW + 60min).
     expiresAt: marker.expiresAt ? marker.expiresAt.toISOString() : null,
+    activatedAt: marker.activatedAt ? marker.activatedAt.toISOString() : null,
     redemptionCount: count,
   };
 }
 
 router.get("/markers", async (req, res): Promise<void> => {
-  const markers = await db.select().from(markersTable).orderBy(markersTable.createdAt);
+  // Newest first per spec — sidebar lists most recently created markers at the top.
+  const markers = await db
+    .select()
+    .from(markersTable)
+    .orderBy(sql`${markersTable.createdAt} DESC`);
 
   const counts = await db
     .select({

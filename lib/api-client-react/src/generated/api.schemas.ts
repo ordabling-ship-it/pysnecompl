@@ -54,10 +54,15 @@ export interface Marker {
   imageUrl: string | null;
   createdAt: string;
   /**
-   * ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.
+   * ISO timestamp when the code expires. Null = timer not started yet.
    * @nullable
    */
   expiresAt: string | null;
+  /**
+   * ISO timestamp when the FIRST guest activated the code. Null = not activated yet. Set atomically together with expiresAt.
+   * @nullable
+   */
+  activatedAt: string | null;
   redemptionCount: number;
 }
 
@@ -83,6 +88,20 @@ export interface CreateRedemptionBody {
   code: string;
 }
 
+export type DiscoveriesRecentItem = {
+  code: string;
+  activatedAt: string;
+};
+
+export interface Discoveries {
+  /** Number of marker activations since the last reset */
+  count: number;
+  /** ISO timestamp of the last counter reset (defaults to first server start) */
+  lastResetAt: string;
+  /** 5 most recent activations since the last reset, newest first */
+  recent: DiscoveriesRecentItem[];
+}
+
 export interface Stats {
   totalMarkers: number;
   activeMarkers: number;
@@ -92,4 +111,8 @@ export interface Stats {
 
 export type ListRedemptionsParams = {
   userId?: number;
+};
+
+export type ResetDiscoveries200 = {
+  lastResetAt: string;
 };

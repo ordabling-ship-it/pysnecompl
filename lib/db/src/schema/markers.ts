@@ -15,6 +15,10 @@ export const markersTable = pgTable("markers", {
   // has entered the code). Set to NOW + 60min atomically on the first successful
   // guest-login. NEVER updated after that.
   expiresAt: timestamp("expires_at", { withTimezone: true }),
+  // The exact moment the FIRST guest activated the code. Set atomically together
+  // with `expiresAt`. Drives the "Activation date" display in the admin UI and
+  // the global "discoveries since reset" counter.
+  activatedAt: timestamp("activated_at", { withTimezone: true }),
 });
 
 export const insertMarkerSchema = createInsertSchema(markersTable).omit({

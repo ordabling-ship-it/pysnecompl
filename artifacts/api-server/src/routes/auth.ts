@@ -69,25 +69,25 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
   }
 
   // ── Atomic first-discovery activation ──
-  // If the marker hasn't been activated yet, try to set expiresAt = NOW + 60min,
-  // but ONLY if it is still null (first-writer-wins). Concurrent requests that
-  // lose the race will see 0 rows updated and simply re-read the winning value.
+  // If the marker hasn't been activated yet, try to set both `activatedAt` (= now)
+  // and `expiresAt` (= now + 60min), but ONLY if expiresAt is still null
+  // (first-writer-wins). Concurrent requests that lose the race re-read the winning
+  // value. activatedAt is the source of truth for "Activation date" + discoveries log.
   let activeExpiresAt = marker.expiresAt;
   if (!activeExpiresAt) {
-    const newExpiresAt = new Date(Date.now() + CODE_TTL_MS);
+    const activatedAt = new Date();
+    const newExpiresAt = new Date(activatedAt.getTime() + CODE_TTL_MS);
     const [activated] = await db
       .update(markersTable)
-      .set({ expiresAt: newExpiresAt })
+      .set({ expiresAt: newExpiresAt, activatedAt })
       .where(and(eq(markersTable.id, marker.id), isNull(markersTable.expiresAt)))
       .returning();
     if (activated?.expiresAt) {
       activeExpiresAt = activated.expiresAt;
       req.log.info({ markerId: marker.id, expiresAt: activeExpiresAt }, "Code timer activated by first guest");
     } else {
-      // Lost the race: another request just activated it. Re-read the winning value.
       const [fresh] = await db.select().from(markersTable).where(eq(markersTable.id, marker.id));
       if (!fresh?.expiresAt) {
-        // Should never happen — row exists (we just selected it) and someone activated it.
         req.log.error({ markerId: marker.id }, "Failed to resolve marker timer after race");
         res.status(500).json({ error: "Nie udało się ustalić czasu wygaśnięcia." });
         return;

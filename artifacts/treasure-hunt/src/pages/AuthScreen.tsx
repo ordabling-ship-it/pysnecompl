@@ -49,7 +49,8 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest }: AuthScreenPro
       {
         onSuccess: (data) => {
           onLoginAdmin(data);
-          toast({ title: "Zalogowano", description: `Witaj ${data.name}!` });
+          // Compact welcome — single short line, ~50% smaller than the prior two-line version.
+          toast({ title: `Witaj, ${data.name}` });
         },
         onError: () => {
           toast({ variant: "destructive", title: "Błąd", description: "Nieprawidłowe dane logowania." });

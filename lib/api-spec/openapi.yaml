@@ -226,6 +226,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /discoveries:
+    get:
+      operationId: getDiscoveries
+      tags: [markers]
+      summary: Get the global discoveries counter, last reset date, and 5 most recent activations
+      responses:
+        "200":
+          description: Discoveries summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Discoveries"
+
+  /discoveries/reset:
+    post:
+      operationId: resetDiscoveries
+      tags: [markers]
+      summary: Reset the discoveries counter (admin only)
+      responses:
+        "200":
+          description: Reset confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lastResetAt:
+                    type: string
+                required:
+                  - lastResetAt
+
   /stats:
     get:
       operationId: getStats
@@ -344,7 +375,10 @@ components:
           type: string
         expiresAt:
           type: ["string", "null"]
-          description: ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.
+          description: ISO timestamp when the code expires. Null = timer not started yet.
+        activatedAt:
+          type: ["string", "null"]
+          description: ISO timestamp when the FIRST guest activated the code. Null = not activated yet. Set atomically together with expiresAt.
         redemptionCount:
           type: integer
       required:
@@ -357,6 +391,7 @@ components:
         - imageUrl
         - createdAt
         - expiresAt
+        - activatedAt
         - redemptionCount
 
     CreateMarkerBody:
@@ -408,6 +443,33 @@ components:
       required:
         - userId
         - code
+
+    Discoveries:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: Number of marker activations since the last reset
+        lastResetAt:
+          type: string
+          description: ISO timestamp of the last counter reset (defaults to first server start)
+        recent:
+          type: array
+          description: 5 most recent activations since the last reset, newest first
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              activatedAt:
+                type: string
+            required:
+              - code
+              - activatedAt
+      required:
+        - count
+        - lastResetAt
+        - recent
 
     Stats:
       type: object

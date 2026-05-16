@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
@@ -6,8 +6,11 @@ import {
   useGetStats,
   useCreateMarker,
   useDeleteMarker,
+  useGetDiscoveries,
+  useResetDiscoveries,
   getListMarkersQueryKey,
   getGetStatsQueryKey,
+  getGetDiscoveriesQueryKey,
 } from "@workspace/api-client-react";
 import type { GuestData } from "@/App";
 import { Button } from "@/components/ui/button";
@@ -23,6 +26,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import {
   LogOut, Search, Shield, User, Image as ImageIcon, Trash2, RefreshCcw,
   BarChart3, List, Loader2, Copy, Eye, X, ChevronRight, ChevronLeft, Clock,
+  Check, ChevronDown, RotateCcw,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -30,6 +34,8 @@ import {
 // ─────────────────────────────────────────────
 const goldCoinHtml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#f59e0b" stroke="#b45309" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 drop-shadow-md"><circle cx="12" cy="12" r="10"/><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
 const adminPinHtml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#22c55e" stroke="#166534" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 drop-shadow-md"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+// Red pin used while a marker's code is actively counting down (admin view).
+const redPinHtml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ef4444" stroke="#7f1d1d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 drop-shadow-md"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
 const expiredPinHtml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#a1a1aa" stroke="#52525b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 drop-shadow-md"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
 const searchPinHtml = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3b82f6" stroke="#1e40af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 drop-shadow-md"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
 
@@ -118,6 +124,27 @@ function formatCodeTimer(ms: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Format an ISO timestamp as "hh:mm dd/mm/yy" for the admin "Activation date" field. */
+function formatActivationDate(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${pad(d.getFullYear() % 100)}`;
+}
+
+/** Format an ISO timestamp as "hh:mm:ss" — used in the discoveries log entries. */
+function formatLogTime(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** Format an ISO timestamp as "dd/mm/yy" — used for the "Last reset" label. */
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${pad(d.getFullYear() % 100)}`;
+}
+
 // ─────────────────────────────────────────────
 // Guest Leaflet popup HTML (static — the single
 // countdown lives in the bottom-center chip).
@@ -159,6 +186,8 @@ type MarkerItem = {
   lng: number;
   // Null = code timer not started yet (no guest has entered the code).
   expiresAt: string | null;
+  // Null until the first guest activates the code; mirrors the moment expiresAt was set.
+  activatedAt: string | null;
   redemptionCount: number;
   imageUrl?: string | null;
 };
@@ -174,12 +203,14 @@ function MarkerRow({
   onDelete,
   onCopy,
   onPreview,
+  isSelected,
 }: {
   m: MarkerItem;
   onFly: (lat: number, lng: number, id: number) => void;
   onDelete: (id: number) => void;
   onCopy: (code: string) => void;
   onPreview: (m: MarkerItem) => void;
+  isSelected: boolean;
 }) {
   // Each row manages its own 1-second tick so we don't re-render the whole list
   const [now, setNow] = useState(Date.now());
@@ -187,6 +218,15 @@ function MarkerRow({
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // When this row is selected (via map-marker click), scroll it into view inside
+  // the right-hand sidebar list so the admin instantly sees it.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isSelected && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [isSelected]);
 
   // Three states:
   //   * expiresAt === null → code is set but timer hasn't started (no guest activated it yet)
@@ -199,10 +239,13 @@ function MarkerRow({
 
   return (
     <div
-      className={`p-3 rounded-md border text-sm transition-colors cursor-pointer ${
-        isExpired
-          ? "bg-gray-50 border-gray-100 opacity-60"
-          : "bg-white hover:border-green-300 hover:shadow-sm"
+      ref={rowRef}
+      className={`p-3 rounded-md text-sm transition-all cursor-pointer ${
+        isSelected
+          ? "border-2 border-green-600 shadow-md bg-white"
+          : isExpired
+            ? "border bg-gray-50 border-gray-100 opacity-60"
+            : "border bg-white hover:border-green-300 hover:shadow-sm"
       }`}
       onClick={() => onFly(m.lat, m.lng, m.id)}
     >
@@ -258,14 +301,24 @@ function MarkerRow({
           <Copy className="w-3.5 h-3.5" />
         </Button>
 
-        <span className="text-xs text-gray-400 ml-auto">{m.redemptionCount} odkryć</span>
+        {/* Per spec: replace the legacy "X odkryć" with the same activation-date
+            field shown below — same font, same data source. Shows "—" until activated. */}
+        <span className="text-[11px] text-gray-400 ml-auto font-mono">
+          {m.activatedAt ? formatActivationDate(m.activatedAt) : "—"}
+        </span>
+      </div>
+
+      {/* Activation date field — explicit label per spec.
+          "Aktywacja" is the moment the FIRST guest entered the code. */}
+      <div className="text-[11px] text-gray-500 mt-1.5 font-mono">
+        Aktywacja: {m.activatedAt ? formatActivationDate(m.activatedAt) : "—"}
       </div>
 
       {/* Real-time mm:ss expiry countdown — placed BELOW the copy button as per spec.
           When the timer has not been started yet (no guest has entered the code),
           we show "Nieaktywny (60:00)" in grey so the admin knows the code is set
           to 60min but hasn't begun counting down. */}
-      <div className={`flex items-center gap-1 mt-1.5 text-xs font-mono font-semibold ${
+      <div className={`flex items-center gap-1 mt-1 text-xs font-mono font-semibold ${
         notStarted ? "text-gray-500" : isExpired ? "text-gray-400" : "text-red-500"
       }`}>
         <Clock className="w-3 h-3" />
@@ -297,6 +350,18 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   const [newDesc, setNewDesc] = useState("");
   const [newImg, setNewImg] = useState<string | null>(null);
   const [imgProcessing, setImgProcessing] = useState(false);
+  // Briefly flashes a green check next to the image upload button after success.
+  const [imgUploadedFlash, setImgUploadedFlash] = useState(false);
+
+  // Selected marker (set by clicking a map marker — drives the bold-border row in the list).
+  const [selectedMarkerId, setSelectedMarkerId] = useState<number | null>(null);
+
+  // Stats filter — toggled by clicking the green "Aktywne" or grey "Wygasłe" stat tiles.
+  // 'all'  → no filter | 'active' → expiresAt is null OR > now | 'expired' → expiresAt <= now
+  const [statsFilter, setStatsFilter] = useState<"all" | "active" | "expired">("all");
+
+  // Discoveries log dropdown open/closed (collapsible yellow box).
+  const [discoveriesOpen, setDiscoveriesOpen] = useState(false);
 
   // Image preview modal state (admin: view uploaded image for any marker)
   const [previewMarker, setPreviewMarker] = useState<MarkerItem | null>(null);
@@ -322,9 +387,25 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   const { data: stats } = useGetStats({
     query: { queryKey: getGetStatsQueryKey(), enabled: isAdmin },
   });
+  const { data: discoveries } = useGetDiscoveries({
+    // Auto-refresh so the counter and recent log stay live while the admin watches.
+    query: { queryKey: getGetDiscoveriesQueryKey(), enabled: isAdmin, refetchInterval: 5000 },
+  });
 
   const createMarker = useCreateMarker();
   const deleteMarker = useDeleteMarker();
+  const resetDiscoveries = useResetDiscoveries();
+
+  // Filtered marker list driven by the stats-tile toggle.
+  // Source of truth for both the list rendering AND the map placement effect.
+  const filteredMarkers = useMemo(() => {
+    if (statsFilter === "all") return markers;
+    const now = Date.now();
+    return markers.filter((m) => {
+      const expired = m.expiresAt !== null && new Date(m.expiresAt).getTime() <= now;
+      return statsFilter === "active" ? !expired : expired;
+    });
+  }, [markers, statsFilter]);
 
   const showSaved = () => {
     setSaved(true);
@@ -369,48 +450,70 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
     return () => { delete (window as unknown as { __thNavigate?: (lat: number, lng: number) => void }).__thNavigate; };
   }, []);
 
-  // ── Place markers on map whenever data changes.
-  //    The guest popup is now static (no per-second image timer), so no tick needed. ──
+  // ── Guest map placement (split out so it doesn't re-run on admin/marker
+  //    changes, and CRITICALLY does not re-run on the per-second `guestNow`
+  //    tick — that re-run was tearing down and rebuilding the marker every
+  //    second and felt like the map was locked. We key purely on markerId
+  //    so a new guest session re-fires, but a re-render does not). ──
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !guestData) return;
+    // Snapshot identity values into local consts so the cleanup closure doesn't
+    // depend on the guestData object identity.
+    const { markerId, lat, lng } = guestData;
+    const popupHtml = buildGuestPopupHtml(guestData);
+    const marker = L.marker([lat, lng], { icon: createIcon(goldCoinHtml) })
+      .addTo(mapRef.current)
+      .bindPopup(popupHtml);
+    markersRef.current[markerId] = marker;
+    mapRef.current.flyTo([lat, lng], 16);
+    marker.openPopup();
+    return () => {
+      marker.remove();
+      delete markersRef.current[markerId];
+    };
+    // Intentionally only depend on the marker identity. Re-renders from the
+    // 1-second countdown tick must NOT re-trigger this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guestData?.markerId]);
+
+  // ── Admin map placement (only fires for admin and when the filtered list
+  //    actually changes). ──
+  useEffect(() => {
+    if (!mapRef.current || !isAdmin) return;
+    // Tear down any previous admin pins before re-rendering.
     Object.values(markersRef.current).forEach((m) => m.remove());
     markersRef.current = {};
-
-    if (guestData) {
-      const marker = L.marker([guestData.lat, guestData.lng], { icon: createIcon(goldCoinHtml) })
-        .addTo(mapRef.current)
-        .bindPopup(buildGuestPopupHtml(guestData));
-      markersRef.current[guestData.markerId] = marker;
-      mapRef.current.flyTo([guestData.lat, guestData.lng], 16);
-      marker.openPopup();
-    } else if (isAdmin) {
-      markers.forEach((m) => {
-        // Null expiresAt = timer not started (treat as still active, just not counting).
-        const isExpired = m.expiresAt !== null && new Date(m.expiresAt) < new Date();
-        // Include thumbnail in admin popup when image exists
-        const imgHtml = m.imageUrl
-          ? `<img src="${m.imageUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:6px"/>`
-          : `<div style="width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px;font-style:italic;margin-bottom:6px">Brak zdjęcia</div>`;
-        const marker = L.marker([m.lat, m.lng], {
-          icon: createIcon(isExpired ? expiredPinHtml : adminPinHtml),
-          opacity: isExpired ? 0.55 : 1,
-        })
-          .addTo(mapRef.current!)
-          .bindPopup(`
-            <div style="padding:8px;min-width:200px">
-              ${imgHtml}
-              <h3 style="font-weight:700;font-size:14px;${isExpired ? "color:#9ca3af" : ""}">${m.title}${isExpired ? " (Wygasły)" : ""}</h3>
-              <p style="font-size:12px;color:#6b7280;margin-top:4px">${m.description}</p>
-              <div style="margin-top:8px;background:#f3f4f6;padding:6px;border-radius:4px;text-align:center">
-                <code style="font-family:monospace;font-weight:700;letter-spacing:0.1em;${isExpired ? "color:#9ca3af;text-decoration:line-through" : "color:#15803d"}">${m.code}</code>
-              </div>
-              <div style="margin-top:6px;font-size:11px;color:#6b7280">Odkrycia: ${m.redemptionCount}</div>
+    filteredMarkers.forEach((m) => {
+      // Three pin colours:
+      //   - grey   → expired (timer started AND past)
+      //   - red    → counting down (timer started, still in the future)
+      //   - green  → not yet activated by any guest (expiresAt is null)
+      const expired = m.expiresAt !== null && new Date(m.expiresAt) < new Date();
+      const counting = m.expiresAt !== null && !expired;
+      const pinHtml = expired ? expiredPinHtml : counting ? redPinHtml : adminPinHtml;
+      const imgHtml = m.imageUrl
+        ? `<img src="${m.imageUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:6px"/>`
+        : `<div style="width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px;font-style:italic;margin-bottom:6px">Brak zdjęcia</div>`;
+      const marker = L.marker([m.lat, m.lng], {
+        icon: createIcon(pinHtml),
+        opacity: expired ? 0.55 : 1,
+      })
+        .addTo(mapRef.current!)
+        .bindPopup(`
+          <div style="padding:8px;min-width:200px">
+            ${imgHtml}
+            <h3 style="font-weight:700;font-size:14px;${expired ? "color:#9ca3af" : ""}">${m.title}${expired ? " (Wygasły)" : ""}</h3>
+            <p style="font-size:12px;color:#6b7280;margin-top:4px">${m.description}</p>
+            <div style="margin-top:8px;background:#f3f4f6;padding:6px;border-radius:4px;text-align:center">
+              <code style="font-family:monospace;font-weight:700;letter-spacing:0.1em;${expired ? "color:#9ca3af;text-decoration:line-through" : "color:#15803d"}">${m.code}</code>
             </div>
-          `);
-        markersRef.current[m.id] = marker;
-      });
-    }
-  }, [guestData, isAdmin, markers]);
+          </div>
+        `);
+      // Click → highlight the corresponding row in the right-hand list.
+      marker.on("click", () => setSelectedMarkerId(m.id));
+      markersRef.current[m.id] = marker;
+    });
+  }, [isAdmin, filteredMarkers]);
 
   const handleCreateMarker = (e: React.FormEvent) => {
     e.preventDefault();
@@ -458,6 +561,9 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
     try {
       const dataUrl = await processImageFile(file);
       setNewImg(dataUrl);
+      // Flash a green checkmark for ~2s to confirm the upload succeeded.
+      setImgUploadedFlash(true);
+      window.setTimeout(() => setImgUploadedFlash(false), 2000);
     } catch {
       toast({ variant: "destructive", title: "Błąd zdjęcia", description: "Nie można przetworzyć obrazu." });
     } finally {
@@ -467,8 +573,18 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   };
 
   const flyToMarker = (lat: number, lng: number, id: number) => {
+    setSelectedMarkerId(id);
     mapRef.current?.flyTo([lat, lng], 18);
     setTimeout(() => { markersRef.current[id]?.openPopup(); }, 500);
+  };
+
+  const handleResetDiscoveries = () => {
+    resetDiscoveries.mutate(undefined, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetDiscoveriesQueryKey() });
+        toast({ title: "Licznik odkryć zresetowany" });
+      },
+    });
   };
 
   const handleAddressSearch = async (e: React.FormEvent) => {
@@ -621,11 +737,13 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
               paddingRight: "12px",
             }}
           >
-            {/* Collapse toggle (mobile only) — floats to the left of the panel */}
+            {/* Collapse toggle (mobile only) — floats to the left of the panel.
+                Per spec the button sits ~10% lower (top-[10%]) so it doesn't crowd
+                the topbar and is easier to thumb-reach. */}
             {isMobile && (
               <button
                 onClick={() => setSidebarCollapsed((v) => !v)}
-                className="absolute -left-8 top-0 w-8 h-10 bg-white/80 backdrop-blur rounded-l-lg border border-r-0 border-white/40 flex items-center justify-center shadow-md z-10"
+                className="absolute -left-8 top-[10%] w-8 h-10 bg-white/80 backdrop-blur rounded-l-lg border border-r-0 border-white/40 flex items-center justify-center shadow-md z-10"
                 aria-label={sidebarCollapsed ? "Rozwiń panel" : "Zwiń panel"}
               >
                 {sidebarCollapsed ? <ChevronLeft className="w-4 h-4 text-green-800" /> : <ChevronRight className="w-4 h-4 text-green-800" />}
@@ -645,18 +763,98 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
               >
                 <h3 className="font-bold text-sm text-green-900 mb-2 uppercase tracking-wider">Statystyki</h3>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div className="bg-green-50/80 p-2 rounded">
+                  {/* Click "Aktywne" → toggle filter to active-only markers (and back to all). */}
+                  <button
+                    type="button"
+                    onClick={() => setStatsFilter((f) => (f === "active" ? "all" : "active"))}
+                    className={`bg-green-50/80 p-2 rounded text-left transition-all ${
+                      statsFilter === "active" ? "ring-2 ring-green-600" : "hover:bg-green-100/80"
+                    }`}
+                    title="Filtruj: tylko aktywne"
+                  >
                     <div className="text-green-600/70 text-xs">Aktywne</div>
                     <div className="font-bold text-green-800">{stats.activeMarkers}</div>
-                  </div>
-                  <div className="bg-gray-50/80 p-2 rounded">
+                  </button>
+                  {/* Click "Wygasłe" → toggle filter to expired-only markers (and back to all). */}
+                  <button
+                    type="button"
+                    onClick={() => setStatsFilter((f) => (f === "expired" ? "all" : "expired"))}
+                    className={`bg-gray-50/80 p-2 rounded text-left transition-all ${
+                      statsFilter === "expired" ? "ring-2 ring-gray-500" : "hover:bg-gray-100/80"
+                    }`}
+                    title="Filtruj: tylko wygasłe"
+                  >
                     <div className="text-gray-500 text-xs">Wygasłe</div>
                     <div className="font-bold text-gray-700">{stats.expiredMarkers}</div>
+                  </button>
+                </div>
+                {statsFilter !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => setStatsFilter("all")}
+                    className="mt-2 text-[11px] text-green-700 hover:underline"
+                  >
+                    Wyczyść filtr
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* ── Odkrycia card (global counter + reset + recent activations log) ── */}
+            {discoveries && showStats && (
+              <div
+                className="shadow-lg rounded-lg pointer-events-auto border overflow-hidden"
+                style={{
+                  background: isMobile ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.97)",
+                  backdropFilter: "blur(12px)",
+                  WebkitBackdropFilter: "blur(12px)",
+                  borderColor: isMobile ? "rgba(255,255,255,0.35)" : "#dcfce7",
+                }}
+              >
+                <div className="p-4">
+                  <h3 className="font-bold text-sm text-green-900 mb-2 uppercase tracking-wider">
+                    Odkrycia
+                  </h3>
+                  <div className="bg-amber-50/90 border border-amber-200 rounded p-2 text-[11px] text-amber-900 space-y-1">
+                    <div>Ostatni reset: <span className="font-mono font-semibold">{formatShortDate(discoveries.lastResetAt)}</span></div>
+                    <div>Odkrycia od resetu: <span className="font-mono font-bold text-amber-800">{discoveries.count}</span></div>
+                    <div className="flex justify-end pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[10px] border-amber-300 text-amber-800 hover:bg-amber-100"
+                        onClick={handleResetDiscoveries}
+                        disabled={resetDiscoveries.isPending}
+                      >
+                        <RotateCcw className="w-3 h-3 mr-1" />
+                        Reset
+                      </Button>
+                    </div>
                   </div>
-                  <div className="bg-amber-50/80 p-2 rounded col-span-2">
-                    <div className="text-amber-600/70 text-xs">Odkrycia (łącznie)</div>
-                    <div className="font-bold text-amber-800">{stats.totalRedemptions}</div>
-                  </div>
+
+                  {/* Collapsible yellow log box: 5 most recent activations (newest on top) */}
+                  <button
+                    type="button"
+                    onClick={() => setDiscoveriesOpen((v) => !v)}
+                    className="mt-2 w-full flex items-center justify-between text-[11px] text-green-800 hover:text-green-900"
+                  >
+                    <span>Ostatnie aktywacje ({discoveries.recent.length})</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${discoveriesOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {discoveriesOpen && (
+                    <div className="mt-1 bg-yellow-100 border border-yellow-300 rounded p-2 font-mono text-[8px] leading-tight space-y-0.5 text-yellow-900">
+                      {discoveries.recent.length === 0 ? (
+                        <div className="italic text-yellow-700">Brak aktywacji od ostatniego resetu.</div>
+                      ) : (
+                        discoveries.recent.map((r) => (
+                          <div key={`${r.code}-${r.activatedAt}`}>
+                            ({formatLogTime(r.activatedAt)}) — {r.code}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -674,7 +872,7 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
               >
                 <div className="p-3 border-b border-green-50/60 flex justify-between items-center bg-green-50/50">
                   <h3 className="font-bold text-sm text-green-900 uppercase tracking-wider">
-                    Skarby ({markers.length})
+                    Skarby ({filteredMarkers.length}{statsFilter !== "all" ? `/${markers.length}` : ""})
                   </h3>
                   <div className="flex items-center gap-2">
                     {saved && (
@@ -692,7 +890,7 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
                 </div>
                 <ScrollArea className="flex-1 p-2">
                   <div className="space-y-2">
-                    {markers.map((m) => (
+                    {filteredMarkers.map((m) => (
                       <MarkerRow
                         key={m.id}
                         m={m}
@@ -700,11 +898,14 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
                         onDelete={handleDeleteMarker}
                         onCopy={handleCopyCode}
                         onPreview={setPreviewMarker}
+                        isSelected={selectedMarkerId === m.id}
                       />
                     ))}
-                    {markers.length === 0 && (
+                    {filteredMarkers.length === 0 && (
                       <div className="text-center p-4 text-gray-500 text-sm">
-                        Brak skarbów. Kliknij na mapę, aby dodać nowy.
+                        {markers.length === 0
+                          ? "Brak skarbów. Kliknij na mapę, aby dodać nowy."
+                          : "Brak skarbów pasujących do filtra."}
                       </div>
                     )}
                   </div>
@@ -723,15 +924,14 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
           const codeExpired = codeRemaining <= 0;
           return (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[999] pointer-events-none">
+              {/* Minimalist guest timer: just a clock icon + mm:ss. No "Pozostało:" label. */}
               <div className={`px-4 py-2 rounded-full text-sm font-mono font-bold shadow-lg flex items-center gap-2 border ${
                 codeExpired
                   ? "bg-gray-100 text-gray-500 border-gray-200"
                   : "bg-white/90 text-red-600 border-red-200"
               }`}>
                 <Clock className="w-4 h-4" />
-                {codeExpired
-                  ? "Kod wygasł"
-                  : `Pozostało: ${formatCodeTimer(codeRemaining)}`}
+                {codeExpired ? "00:00" : formatCodeTimer(codeRemaining)}
               </div>
             </div>
           );
@@ -791,6 +991,12 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
                         <Loader2 className="w-6 h-6 animate-spin text-green-600" />
                       </div>
                     )}
+                    {/* Brief green-check confirmation after a successful upload. */}
+                    {imgUploadedFlash && !imgProcessing && (
+                      <div className="absolute top-1 right-1 bg-green-600 text-white rounded-full p-1 shadow animate-in fade-in zoom-in duration-200">
+                        <Check className="w-4 h-4" />
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -828,6 +1034,8 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
                 >
                   {imgProcessing ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Kompresja…</>
+                  ) : imgUploadedFlash ? (
+                    <><Check className="w-4 h-4 mr-2 text-green-600" /> Wgrane</>
                   ) : (
                     <><ImageIcon className="w-4 h-4 mr-2" /> Wybierz zdjęcie</>
                   )}

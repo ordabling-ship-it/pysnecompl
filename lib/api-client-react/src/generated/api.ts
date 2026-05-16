@@ -21,6 +21,7 @@ import type {
   AuthResponse,
   CreateMarkerBody,
   CreateRedemptionBody,
+  Discoveries,
   ErrorResponse,
   GuestAuthResponse,
   GuestLoginBody,
@@ -28,6 +29,7 @@ import type {
   ListRedemptionsParams,
   Marker,
   Redemption,
+  ResetDiscoveries200,
   Stats,
 } from "./api.schemas";
 
@@ -881,6 +883,162 @@ export const useCreateRedemption = <
   TContext
 > => {
   return useMutation(getCreateRedemptionMutationOptions(options));
+};
+
+/**
+ * @summary Get the global discoveries counter, last reset date, and 5 most recent activations
+ */
+export const getGetDiscoveriesUrl = () => {
+  return `/api/discoveries`;
+};
+
+export const getDiscoveries = async (
+  options?: RequestInit,
+): Promise<Discoveries> => {
+  return customFetch<Discoveries>(getGetDiscoveriesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDiscoveriesQueryKey = () => {
+  return [`/api/discoveries`] as const;
+};
+
+export const getGetDiscoveriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDiscoveries>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDiscoveries>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDiscoveriesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDiscoveries>>> = ({
+    signal,
+  }) => getDiscoveries({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDiscoveries>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDiscoveriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDiscoveries>>
+>;
+export type GetDiscoveriesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the global discoveries counter, last reset date, and 5 most recent activations
+ */
+
+export function useGetDiscoveries<
+  TData = Awaited<ReturnType<typeof getDiscoveries>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDiscoveries>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDiscoveriesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Reset the discoveries counter (admin only)
+ */
+export const getResetDiscoveriesUrl = () => {
+  return `/api/discoveries/reset`;
+};
+
+export const resetDiscoveries = async (
+  options?: RequestInit,
+): Promise<ResetDiscoveries200> => {
+  return customFetch<ResetDiscoveries200>(getResetDiscoveriesUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getResetDiscoveriesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetDiscoveries>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resetDiscoveries>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["resetDiscoveries"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resetDiscoveries>>,
+    void
+  > = () => {
+    return resetDiscoveries(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResetDiscoveriesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resetDiscoveries>>
+>;
+
+export type ResetDiscoveriesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Reset the discoveries counter (admin only)
+ */
+export const useResetDiscoveries = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetDiscoveries>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resetDiscoveries>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getResetDiscoveriesMutationOptions(options));
 };
 
 /**
