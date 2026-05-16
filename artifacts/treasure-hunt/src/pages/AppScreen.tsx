@@ -118,34 +118,14 @@ function formatCodeTimer(ms: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-/** Format remaining ms as HH:mm:ss (used for the image visibility countdown). */
-function formatRemaining(ms: number): string {
-  if (ms <= 0) return "00:00:00";
-  const total = Math.floor(ms / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
-
 // ─────────────────────────────────────────────
-// Guest Leaflet popup HTML (rebuilt each second)
+// Guest Leaflet popup HTML (static — the single
+// countdown lives in the bottom-center chip).
 // ─────────────────────────────────────────────
-function buildGuestPopupHtml(g: GuestData, nowMs: number): string {
-  const imgExpiresMs = new Date(g.imageExpiresAt).getTime();
-  const imgRemaining = imgExpiresMs - nowMs;
-  const imageExpired = g.imageExpired || imgRemaining <= 0;
-
-  const imageBlock = imageExpired
-    ? `<div style="width:100%;height:96px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;background:#f3f4f6;color:#9ca3af;font-size:12px;font-style:italic;border:1px dashed #d1d5db;border-radius:4px">Zdjęcie wygasło</div>`
-    : g.imageUrl
-      ? `<img src="${g.imageUrl}" style="width:100%;height:96px;object-fit:cover;border-radius:4px;margin-bottom:8px"/>`
-      : "";
-
-  const imageTimerBlock = imageExpired
-    ? `<div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:4px">⏱️ Zdjęcie wygasło</div>`
-    : `<div style="font-size:11px;color:#6b7280;margin-top:4px">⏱️ Zdjęcie dostępne do: <span style="font-family:monospace;font-weight:700;color:#b45309">${formatRemaining(imgRemaining)}</span></div>`;
+function buildGuestPopupHtml(g: GuestData): string {
+  const imageBlock = g.imageUrl
+    ? `<img src="${g.imageUrl}" style="width:100%;height:96px;object-fit:cover;border-radius:4px;margin-bottom:8px"/>`
+    : "";
 
   return `
     <div style="padding:8px;min-width:230px">
@@ -153,7 +133,6 @@ function buildGuestPopupHtml(g: GuestData, nowMs: number): string {
       <h3 style="font-weight:700;font-size:15px;color:#d97706">${g.markerTitle}</h3>
       <p style="font-size:12px;color:#374151;margin-top:4px;font-style:italic">💡 ${g.markerDescription}</p>
       <span style="display:inline-block;margin-top:8px;padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase">Moneta znaleziona!</span>
-      ${imageTimerBlock}
       <button onclick="window.__thNavigate(${g.lat}, ${g.lng})"
         style="margin-top:10px;width:100%;background:#2563eb;color:#fff;font-size:13px;font-weight:600;padding:7px 10px;border:none;border-radius:6px;cursor:pointer">
         🧭 Nawiguj
@@ -178,7 +157,8 @@ type MarkerItem = {
   code: string;
   lat: number;
   lng: number;
-  expiresAt: string;
+  // Null = code timer not started yet (no guest has entered the code).
+  expiresAt: string | null;
   redemptionCount: number;
   imageUrl?: string | null;
 };
@@ -208,9 +188,14 @@ function MarkerRow({
     return () => window.clearInterval(id);
   }, []);
 
-  const expiresMs = new Date(m.expiresAt).getTime();
+  // Three states:
+  //   * expiresAt === null → code is set but timer hasn't started (no guest activated it yet)
+  //   * remaining > 0       → countdown active
+  //   * remaining <= 0      → code expired (greyed out for admin, hidden from guests)
+  const notStarted = m.expiresAt === null;
+  const expiresMs = m.expiresAt ? new Date(m.expiresAt).getTime() : 0;
   const remaining = expiresMs - now;
-  const isExpired = remaining <= 0;
+  const isExpired = !notStarted && remaining <= 0;
 
   return (
     <div
@@ -276,10 +261,19 @@ function MarkerRow({
         <span className="text-xs text-gray-400 ml-auto">{m.redemptionCount} odkryć</span>
       </div>
 
-      {/* Real-time mm:ss expiry countdown — placed BELOW the copy button as per spec */}
-      <div className={`flex items-center gap-1 mt-1.5 text-xs font-mono font-semibold ${isExpired ? "text-gray-400" : "text-red-500"}`}>
+      {/* Real-time mm:ss expiry countdown — placed BELOW the copy button as per spec.
+          When the timer has not been started yet (no guest has entered the code),
+          we show "Nieaktywny (60:00)" in grey so the admin knows the code is set
+          to 60min but hasn't begun counting down. */}
+      <div className={`flex items-center gap-1 mt-1.5 text-xs font-mono font-semibold ${
+        notStarted ? "text-gray-500" : isExpired ? "text-gray-400" : "text-red-500"
+      }`}>
         <Clock className="w-3 h-3" />
-        {isExpired ? "Wygasły" : `Pozostało: ${formatCodeTimer(remaining)}`}
+        {notStarted
+          ? "Nieaktywny (60:00)"
+          : isExpired
+            ? "Wygasły"
+            : `Pozostało: ${formatCodeTimer(remaining)}`}
       </div>
     </div>
   );
@@ -375,19 +369,8 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
     return () => { delete (window as unknown as { __thNavigate?: (lat: number, lng: number) => void }).__thNavigate; };
   }, []);
 
-  // ── Guest popup: tick every second to update image countdown ──
-  useEffect(() => {
-    if (!guestData) return;
-    const tick = () => {
-      const marker = markersRef.current[guestData.markerId];
-      if (marker) marker.setPopupContent(buildGuestPopupHtml(guestData, Date.now()));
-    };
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [guestData]);
-
-  // ── Place markers on map whenever data changes ──
+  // ── Place markers on map whenever data changes.
+  //    The guest popup is now static (no per-second image timer), so no tick needed. ──
   useEffect(() => {
     if (!mapRef.current) return;
     Object.values(markersRef.current).forEach((m) => m.remove());
@@ -396,13 +379,14 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
     if (guestData) {
       const marker = L.marker([guestData.lat, guestData.lng], { icon: createIcon(goldCoinHtml) })
         .addTo(mapRef.current)
-        .bindPopup(buildGuestPopupHtml(guestData, Date.now()));
+        .bindPopup(buildGuestPopupHtml(guestData));
       markersRef.current[guestData.markerId] = marker;
       mapRef.current.flyTo([guestData.lat, guestData.lng], 16);
       marker.openPopup();
     } else if (isAdmin) {
       markers.forEach((m) => {
-        const isExpired = new Date(m.expiresAt) < new Date();
+        // Null expiresAt = timer not started (treat as still active, just not counting).
+        const isExpired = m.expiresAt !== null && new Date(m.expiresAt) < new Date();
         // Include thumbnail in admin popup when image exists
         const imgHtml = m.imageUrl
           ? `<img src="${m.imageUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:6px"/>`

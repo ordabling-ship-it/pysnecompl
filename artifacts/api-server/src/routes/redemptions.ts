@@ -66,7 +66,8 @@ router.post("/redemptions", async (req, res): Promise<void> => {
     return;
   }
 
-  if (new Date() > new Date(marker.expiresAt)) {
+  // Null expiresAt means no guest has activated the timer yet — still valid.
+  if (marker.expiresAt && new Date() > new Date(marker.expiresAt)) {
     res.status(400).json({ error: "Ten skarb już wygasł!" });
     return;
   }

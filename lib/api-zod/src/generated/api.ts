@@ -36,8 +36,9 @@ export const GuestLoginBody = zod.object({
   code: zod.string(),
   guestToken: zod
     .string()
+    .optional()
     .describe(
-      "Browser-generated unique guest identifier (UUID) stored in localStorage. Used to track per-user discovery time.",
+      "Optional, legacy browser identifier. Server no longer uses it for timer logic (the marker timer is shared across all guests once activated).",
     ),
 });
 
@@ -46,27 +47,13 @@ export const GuestLoginResponse = zod.object({
   code: zod.string(),
   markerTitle: zod.string(),
   markerDescription: zod.string(),
-  imageUrl: zod
-    .string()
-    .nullable()
-    .describe("Null if image has expired (more than 2h after discovery)"),
+  imageUrl: zod.string().nullable(),
   lat: zod.number(),
   lng: zod.number(),
-  discoveredAt: zod
-    .string()
-    .describe(
-      "ISO timestamp of when this guest first discovered this treasure",
-    ),
-  imageExpiresAt: zod
-    .string()
-    .describe("ISO timestamp when image becomes hidden (discoveredAt + 2h)"),
-  imageExpired: zod
-    .boolean()
-    .describe("True if the image visibility window has elapsed"),
   markerExpiresAt: zod
     .string()
     .describe(
-      "ISO timestamp when the treasure code itself becomes inactive (used for the mm:ss countdown timer in the guest panel)",
+      "ISO timestamp when the treasure code becomes inactive. Set on the FIRST successful guest-login (NOW + 60min). Drives the single bottom-of-screen red countdown.",
     ),
 });
 
@@ -82,7 +69,12 @@ export const ListMarkersResponseItem = zod.object({
   lng: zod.number(),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
-  expiresAt: zod.string(),
+  expiresAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.",
+    ),
   redemptionCount: zod.number(),
 });
 export const ListMarkersResponse = zod.array(ListMarkersResponseItem);
@@ -114,7 +106,12 @@ export const GetMarkerResponse = zod.object({
   lng: zod.number(),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
-  expiresAt: zod.string(),
+  expiresAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.",
+    ),
   redemptionCount: zod.number(),
 });
 
@@ -141,7 +138,12 @@ export const GetMarkerByCodeResponse = zod.object({
   lng: zod.number(),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
-  expiresAt: zod.string(),
+  expiresAt: zod
+    .string()
+    .nullable()
+    .describe(
+      "ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.",
+    ),
   redemptionCount: zod.number(),
 });
 

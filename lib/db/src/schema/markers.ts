@@ -11,7 +11,10 @@ export const markersTable = pgTable("markers", {
   lng: doublePrecision("lng").notNull(),
   imageUrl: text("image_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  // Null = countdown has not started yet (admin created the marker but no guest
+  // has entered the code). Set to NOW + 60min atomically on the first successful
+  // guest-login. NEVER updated after that.
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
 });
 
 export const insertMarkerSchema = createInsertSchema(markersTable).omit({

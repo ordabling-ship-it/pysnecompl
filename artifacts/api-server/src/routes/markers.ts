@@ -24,7 +24,8 @@ function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, cou
     lng: marker.lng,
     imageUrl: marker.imageUrl ?? null,
     createdAt: marker.createdAt.toISOString(),
-    expiresAt: marker.expiresAt.toISOString(),
+    // Null until the first guest enters the code (then it's NOW + 60min).
+    expiresAt: marker.expiresAt ? marker.expiresAt.toISOString() : null,
     redemptionCount: count,
   };
 }
@@ -56,11 +57,12 @@ router.post("/markers", async (req, res): Promise<void> => {
 
   const { title, description, lat, lng, imageUrl } = parsed.data;
   const code = genCode();
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
+  // IMPORTANT: admin creation does NOT start the timer. expiresAt stays null
+  // until the first guest successfully enters the code (see auth.ts).
   const [marker] = await db
     .insert(markersTable)
-    .values({ title, description, lat, lng, imageUrl: imageUrl ?? null, code, expiresAt })
+    .values({ title, description, lat, lng, imageUrl: imageUrl ?? null, code, expiresAt: null })
     .returning();
 
   req.log.info({ markerId: marker.id, code }, "Marker created");
@@ -84,7 +86,8 @@ router.get("/markers/by-code/:code", async (req, res): Promise<void> => {
     return;
   }
 
-  if (new Date() > new Date(marker.expiresAt)) {
+  // expiresAt is null until first discovery; treat null as "not yet expired".
+  if (marker.expiresAt && new Date() > new Date(marker.expiresAt)) {
     res.status(404).json({ error: "Marker expired" });
     return;
   }

@@ -18,17 +18,15 @@ export type GuestData = {
   imageUrl: string | null;
   lat: number;
   lng: number;
-  discoveredAt: string;
-  imageExpiresAt: string;
-  imageExpired: boolean;
   markerExpiresAt: string;
 };
 
 const GUEST_SESSION_KEY = "th_guest_session";
 const GUEST_TOKEN_KEY = "th_guest_token";
 
-// Generate (or read) a stable per-browser guest identity. Used by the server
-// to track per-user discovery time so the 2-hour image window survives refresh.
+// Stable per-browser guest identity (kept for backwards compatibility with the
+// API contract — the server still accepts it but the marker timer is now
+// shared, not per-guest).
 export function getOrCreateGuestToken(): string {
   let token = localStorage.getItem(GUEST_TOKEN_KEY);
   if (!token) {
@@ -46,7 +44,8 @@ function MainApp() {
   const [hydrating, setHydrating] = useState(true);
 
   // On reload, if we have a saved guest session, ask the server for fresh state.
-  // The server returns the original discoveredAt (per-user), so the timer keeps counting.
+  // The server returns the SHARED marker timer (set on first activation), so
+  // the countdown picks up wherever it left off and cannot be restarted.
   useEffect(() => {
     const saved = localStorage.getItem(GUEST_SESSION_KEY);
     if (!saved) {

@@ -8,8 +8,11 @@ router.get("/stats", async (_req, res): Promise<void> => {
   const [markerStats] = await db
     .select({
       total: sql<number>`count(*)::int`,
-      active: sql<number>`count(*) filter (where expires_at > now())::int`,
-      expired: sql<number>`count(*) filter (where expires_at <= now())::int`,
+      // Active = either timer not yet started (NULL), or started but still in the future.
+      // Expired = timer started AND now past it. NULL counts as active to match the
+      // single-timer model where admin creation does not start the countdown.
+      active: sql<number>`count(*) filter (where expires_at IS NULL OR expires_at > now())::int`,
+      expired: sql<number>`count(*) filter (where expires_at IS NOT NULL AND expires_at <= now())::int`,
     })
     .from(markersTable);
 

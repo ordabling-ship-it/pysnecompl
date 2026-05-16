@@ -39,16 +39,22 @@ A full-stack geo-treasure hunt web app for Szczecin, Poland. Admins hide treasur
 ## Database Schema
 
 - `users` — admin users (id, name, email, password_hash, role)
-- `markers` — treasure locations (id, title, description, code, lat, lng, image_url, created_at, expires_at)
+- `markers` — treasure locations (id, title, description, code, lat, lng, image_url, created_at, **expires_at NULLABLE**)
 - `redemptions` — which user redeemed which code (id, user_id, marker_id, redeemed_at)
-- `guest_discoveries` — per-guest discovery time for image expiration (id, marker_id, guest_token, discovered_at). Unique on (marker_id, guest_token). `guest_token` is a browser-generated UUID stored in localStorage so the 2-hour image visibility window is per-user and survives page refreshes.
+- `guest_discoveries` — legacy table; no longer used by application code (kept in DB for backwards compatibility).
 
-## Guest image expiration
+## Code countdown timer (single source of truth)
 
-- Guest treasure images are visible for **2 hours** from each guest's first discovery (per-user, not global).
-- The frontend persists `{ code }` under `th_guest_session` and the guest UUID under `th_guest_token` in localStorage.
-- On page refresh, App.tsx auto-calls `/auth/guest-login` with the saved code + guestToken; the server returns the original `discoveredAt` so the timer keeps counting.
-- The Leaflet popup updates once per second via `marker.setPopupContent()` showing `Zdjęcie dostępne do: HH:MM:SS`. After expiry, the image is replaced by a `Zdjęcie wygasło` placeholder and the server stops returning `imageUrl`.
+The application has exactly **one** countdown timer: the 60-minute marker code timer.
+
+- **Admin creation**: `markers.expires_at` is left **NULL**. The 60-minute value is implicit (set by `CODE_TTL_MS` in `auth.ts`) but the timer does **not** start.
+- **First guest activation**: when the FIRST guest successfully enters a valid code, the server runs an atomic conditional UPDATE (`SET expires_at = NOW + 60min WHERE id = ? AND expires_at IS NULL`). First-writer-wins; concurrent races re-read the winning value.
+- **Subsequent guests**: see the same shared `markerExpiresAt` — the timer does NOT restart on re-login or refresh.
+- **UI surface**: a single red mm:ss chip at the bottom-center of the map, plus the same `Pozostało: mm:ss` in each admin row.
+- **Expired state**: guests get a 401 ("Ten skarb już wygasł") on `/auth/guest-login`; admins still see the row and code, but greyed out + line-through (`Wygasły`).
+- **Pre-activation state (admin only)**: the row shows `Nieaktywny (60:00)` in grey so the admin knows the code is set but no guest has activated it yet.
+
+The frontend persists `{ code }` under `th_guest_session` so a page refresh re-fetches the same shared timer.
 
 ## Admin credentials
 

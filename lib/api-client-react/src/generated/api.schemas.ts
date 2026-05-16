@@ -20,8 +20,8 @@ export interface AdminLoginBody {
 
 export interface GuestLoginBody {
   code: string;
-  /** Browser-generated unique guest identifier (UUID) stored in localStorage. Used to track per-user discovery time. */
-  guestToken: string;
+  /** Optional, legacy browser identifier. Server no longer uses it for timer logic (the marker timer is shared across all guests once activated). */
+  guestToken?: string;
 }
 
 export interface AuthResponse {
@@ -35,20 +35,11 @@ export interface GuestAuthResponse {
   code: string;
   markerTitle: string;
   markerDescription: string;
-  /**
-   * Null if image has expired (more than 2h after discovery)
-   * @nullable
-   */
+  /** @nullable */
   imageUrl: string | null;
   lat: number;
   lng: number;
-  /** ISO timestamp of when this guest first discovered this treasure */
-  discoveredAt: string;
-  /** ISO timestamp when image becomes hidden (discoveredAt + 2h) */
-  imageExpiresAt: string;
-  /** True if the image visibility window has elapsed */
-  imageExpired: boolean;
-  /** ISO timestamp when the treasure code itself becomes inactive (used for the mm:ss countdown timer in the guest panel) */
+  /** ISO timestamp when the treasure code becomes inactive. Set on the FIRST successful guest-login (NOW + 60min). Drives the single bottom-of-screen red countdown. */
   markerExpiresAt: string;
 }
 
@@ -62,7 +53,11 @@ export interface Marker {
   /** @nullable */
   imageUrl: string | null;
   createdAt: string;
-  expiresAt: string;
+  /**
+   * ISO timestamp when the code expires. Null means the timer has NOT been started yet (no guest has entered the code). Set to NOW + 60min on first guest-login.
+   * @nullable
+   */
+  expiresAt: string | null;
   redemptionCount: number;
 }
 
