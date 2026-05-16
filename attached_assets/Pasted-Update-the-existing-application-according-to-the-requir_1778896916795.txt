@@ -1,0 +1,155 @@
+Update the existing application according to the requirements below. Do NOT create a new app — modify the current project while preserving the existing architecture, routing, database structure, and UI style.
+
+Admin Panel Updates
+
+1. Copy Treasure Code Button
+
+Add a Copy Code button next to each treasure item in the admin panel list.
+
+Requirements:
+
+* clicking the button copies the treasure code to clipboard,
+* after copying, show a small toast notification:
+    * “Code copied”,
+* must work on both desktop and mobile,
+* use navigator.clipboard.writeText().
+
+⸻
+
+2. Edit and Remove Treasure Image
+
+In the add/edit treasure form, allow the administrator to:
+
+* upload an image,
+* remove the current image,
+* replace the image with a new one.
+
+Requirements:
+
+* after uploading, display an image preview thumbnail,
+* add buttons:
+    * Remove Image
+    * Replace Image,
+* removing the image should clear both preview and file data,
+* replacing an image should overwrite the previous file.
+
+⸻
+
+3. Treasure Code Expiration Timer (mm:ss)
+
+Add a red countdown timer showing the remaining active time of a treasure code.
+
+Requirements:
+
+* timer format: mm:ss,
+* text color: red,
+* countdown starts from the moment the code is activated,
+* after expiration:
+    * the code automatically becomes inactive,
+    * status updates automatically,
+* timer must be visible in:
+    * admin panel,
+    * user panel,
+* timer updates in real time without page refresh.
+
+Make sure:
+
+* frontend and backend time stay synchronized,
+* timer still works correctly after reopening/reloading the page.
+
+⸻
+
+4. Treasure Image Preview on Click
+
+When the administrator clicks a treasure:
+
+* on the map,
+* or from the sidebar treasure list,
+
+show the previously uploaded treasure image preview.
+
+Requirements:
+
+* display thumbnail or larger preview,
+* open inside details panel or modal,
+* if there is no image → show placeholder text:
+    * “No image available”.
+
+⸻
+
+5. Image Compression Before Upload
+
+Improve the image upload system.
+
+Requirements:
+
+* every uploaded image must be automatically compressed BEFORE uploading to the image hosting server,
+* target image size:
+    * under 1 MB,
+* maintain good visual readability/quality,
+* compression must happen client-side.
+
+Technical recommendations:
+
+* use:
+    * browser-image-compression
+    * or canvas-based compression,
+* convert images to:
+    * JPEG or WEBP,
+* use reasonable quality settings.
+
+Additionally:
+
+* show loading state during compression/upload,
+* handle upload errors properly.
+
+⸻
+
+6. Improve Mobile Admin Sidebar
+
+Redesign the admin sidebar behavior on mobile devices.
+
+Current issue:
+
+* sidebar covers the entire screen.
+
+New requirements:
+
+* the map must remain visible,
+* statistics should also remain partially visible,
+* sidebar should be semi-transparent.
+
+UI requirements:
+
+* sidebar transparency: around 70%,
+* use blur/glassmorphism background effect,
+* sidebar width on mobile:
+    * maximum 60–70% of screen width,
+* add:
+    * collapse,
+    * draggable,
+    * or swipe-to-close behavior.
+
+Ensure:
+
+* full responsiveness,
+* smooth animations,
+* map is never fully hidden.
+
+⸻
+
+Additional Technical Requirements
+
+* Preserve the existing application design.
+* Do not remove current functionality.
+* Keep the code modular and clean.
+* Add comments to newly added logic.
+* Ensure all features work correctly on both desktop and mobile.
+* Use TypeScript where possible.
+* Optimize treasure list rendering and timer performance.
+
+After implementation:
+
+* show the list of modified files,
+* briefly explain what was changed,
+* confirm that the build passes without errors.
