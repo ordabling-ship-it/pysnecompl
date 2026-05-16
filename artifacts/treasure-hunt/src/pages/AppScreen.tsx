@@ -594,11 +594,11 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
       <div className="flex-1 relative bg-slate-100 z-0">
         <div id="map" ref={mapContainer} className="absolute inset-0 w-full h-full" />
 
-        {/* Address search (admin) */}
+        {/* Address search (admin) — bottom-centered, responsive width */}
         {isAdmin && (
           <form
             onSubmit={handleAddressSearch}
-            className="absolute top-4 left-4 z-[1000] bg-white/95 backdrop-blur shadow-lg rounded-lg border border-green-100 p-2 flex items-center gap-2 w-[260px] sm:w-72"
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 backdrop-blur shadow-lg rounded-lg border border-green-100 p-2 flex items-center gap-2 w-[min(92vw,360px)]"
           >
             <Input
               placeholder="Szukaj ulicy w Szczecinie..."
@@ -629,9 +629,12 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
             `}
             style={{
               width: isMobile ? "min(65vw, 280px)" : "320px",
-              maxHeight: "calc(100% - 2rem)",
+              // Definite height range (top + bottom) is required for the inner
+              // `flex-1 min-h-0` treasure list to grow and become scrollable.
+              // Bottom offset leaves room for the centered search bar.
+              top: "1rem",
+              bottom: "5rem",
               paddingRight: "12px",
-              paddingLeft: isMobile ? "0" : "0",
             }}
           >
             {/* Collapse toggle (mobile only) — floats to the left of the panel */}
@@ -674,12 +677,11 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
               </div>
             )}
 
-            {/* Treasure list card */}
+            {/* Treasure list card — fills remaining vertical space and scrolls internally */}
             {showTreasureList && (
               <div
-                className="shadow-lg rounded-lg flex flex-col pointer-events-auto border overflow-hidden"
+                className="shadow-lg rounded-lg flex flex-col pointer-events-auto border overflow-hidden flex-1 min-h-0"
                 style={{
-                  maxHeight: isMobile ? "calc(100dvh - 200px)" : "500px",
                   background: isMobile ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.97)",
                   backdropFilter: "blur(12px)",
                   WebkitBackdropFilter: "blur(12px)",

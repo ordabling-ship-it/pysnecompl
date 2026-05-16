@@ -11,6 +11,11 @@ const router: IRouter = Router();
 // Image visibility window: 2 hours from the moment a guest discovers a treasure
 const IMAGE_TTL_MS = 2 * 60 * 60 * 1000;
 
+// Per-guest code countdown duration: 1 hour from the moment a guest enters a valid code.
+// This guarantees the on-screen timer starts ONLY at discovery (not from page load or
+// from the marker's seed time), and persists across page refreshes via guest_discoveries.
+const CODE_TTL_MS = 60 * 60 * 1000;
+
 router.post("/auth/admin-login", async (req, res): Promise<void> => {
   const parsed = AdminLoginBody.safeParse(req.body);
   if (!parsed.success) {
@@ -102,8 +107,10 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     discoveredAt: discoveredAt.toISOString(),
     imageExpiresAt: imageExpiresAt.toISOString(),
     imageExpired,
-    // Marker code expiration — used by the guest panel to display a live mm:ss countdown
-    markerExpiresAt: new Date(marker.expiresAt).toISOString(),
+    // Per-guest code expiration: timer starts at the moment THIS guest discovered the
+    // treasure and runs for CODE_TTL_MS. Because discoveredAt is stable per-user (stored
+    // in guest_discoveries), the timer persists across reloads and cannot restart.
+    markerExpiresAt: new Date(discoveredAt.getTime() + CODE_TTL_MS).toISOString(),
   });
 });
 
