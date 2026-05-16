@@ -321,6 +321,9 @@ components:
         imageExpired:
           type: boolean
           description: True if the image visibility window has elapsed
+        markerExpiresAt:
+          type: string
+          description: ISO timestamp when the treasure code itself becomes inactive (used for the mm:ss countdown timer in the guest panel)
       required:
         - markerId
         - code
@@ -332,6 +335,7 @@ components:
         - discoveredAt
         - imageExpiresAt
         - imageExpired
+        - markerExpiresAt
 
     Marker:
       type: object

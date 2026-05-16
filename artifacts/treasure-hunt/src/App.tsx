@@ -21,6 +21,7 @@ export type GuestData = {
   discoveredAt: string;
   imageExpiresAt: string;
   imageExpired: boolean;
+  markerExpiresAt: string;
 };
 
 const GUEST_SESSION_KEY = "th_guest_session";

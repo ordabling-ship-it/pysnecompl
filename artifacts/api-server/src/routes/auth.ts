@@ -102,6 +102,8 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     discoveredAt: discoveredAt.toISOString(),
     imageExpiresAt: imageExpiresAt.toISOString(),
     imageExpired,
+    // Marker code expiration — used by the guest panel to display a live mm:ss countdown
+    markerExpiresAt: new Date(marker.expiresAt).toISOString(),
   });
 });
 

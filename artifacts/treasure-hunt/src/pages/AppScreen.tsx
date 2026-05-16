@@ -252,8 +252,8 @@ function MarkerRow({
         </div>
       </div>
 
-      {/* Code + copy + expiry timer */}
-      <div className="flex items-center gap-2 mt-2 flex-wrap">
+      {/* Code + copy button row */}
+      <div className="flex items-center gap-2 mt-2">
         <code
           className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-widest ${
             isExpired ? "bg-gray-200 text-gray-400 line-through" : "bg-amber-100 text-amber-800"
@@ -266,21 +266,21 @@ function MarkerRow({
         <Button
           variant="ghost"
           size="icon"
-          className="w-5 h-5 text-gray-400 hover:text-green-700 hover:bg-green-50"
+          className="w-6 h-6 text-gray-400 hover:text-green-700 hover:bg-green-50"
           title="Kopiuj kod"
           onClick={(e) => { e.stopPropagation(); onCopy(m.code); }}
         >
-          <Copy className="w-3 h-3" />
+          <Copy className="w-3.5 h-3.5" />
         </Button>
 
-        {/* Real-time mm:ss expiry countdown (red while counting, gray when expired) */}
-        <span className={`flex items-center gap-0.5 text-xs font-mono font-semibold ml-auto ${isExpired ? "text-gray-400" : "text-red-500"}`}>
-          <Clock className="w-3 h-3" />
-          {isExpired ? "Wygasły" : formatCodeTimer(remaining)}
-        </span>
+        <span className="text-xs text-gray-400 ml-auto">{m.redemptionCount} odkryć</span>
       </div>
 
-      <div className="text-xs text-gray-400 mt-1">{m.redemptionCount} odkryć</div>
+      {/* Real-time mm:ss expiry countdown — placed BELOW the copy button as per spec */}
+      <div className={`flex items-center gap-1 mt-1.5 text-xs font-mono font-semibold ${isExpired ? "text-gray-400" : "text-red-500"}`}>
+        <Clock className="w-3 h-3" />
+        {isExpired ? "Wygasły" : `Pozostało: ${formatCodeTimer(remaining)}`}
+      </div>
     </div>
   );
 }
@@ -728,20 +728,24 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
           </div>
         )}
 
-        {/* Guest: code expiry info chip (bottom-center, visible on map) */}
+        {/* Guest: code expiry mm:ss countdown (bottom-center, visible on map).
+            Per spec, the same red mm:ss timer that admins see for the code must
+            also be visible to the user/guest. */}
         {guestData && (() => {
-          const codeExpiresMs = new Date(guestData.imageExpiresAt).getTime(); // reuse imageExpiresAt as proxy isn't right...
-          // Show image expiry chip on the map for the guest
-          const imgExpiresMs = new Date(guestData.imageExpiresAt).getTime();
-          const imgRemaining = imgExpiresMs - guestNow;
-          const imgExpired = guestData.imageExpired || imgRemaining <= 0;
+          const codeExpiresMs = new Date(guestData.markerExpiresAt).getTime();
+          const codeRemaining = codeExpiresMs - guestNow;
+          const codeExpired = codeRemaining <= 0;
           return (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[999] pointer-events-none">
-              <div className={`px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg flex items-center gap-1.5 ${imgExpired ? "bg-red-100 text-red-700 border border-red-200" : "bg-white/90 text-amber-700 border border-amber-200"}`}>
-                <Clock className="w-3 h-3" />
-                {imgExpired
-                  ? "Zdjęcie wygasło"
-                  : `Zdjęcie dostępne: ${formatRemaining(imgRemaining)}`}
+              <div className={`px-4 py-2 rounded-full text-sm font-mono font-bold shadow-lg flex items-center gap-2 border ${
+                codeExpired
+                  ? "bg-gray-100 text-gray-500 border-gray-200"
+                  : "bg-white/90 text-red-600 border-red-200"
+              }`}>
+                <Clock className="w-4 h-4" />
+                {codeExpired
+                  ? "Kod wygasł"
+                  : `Pozostało: ${formatCodeTimer(codeRemaining)}`}
               </div>
             </div>
           );

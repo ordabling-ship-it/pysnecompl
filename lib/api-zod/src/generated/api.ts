@@ -63,6 +63,11 @@ export const GuestLoginResponse = zod.object({
   imageExpired: zod
     .boolean()
     .describe("True if the image visibility window has elapsed"),
+  markerExpiresAt: zod
+    .string()
+    .describe(
+      "ISO timestamp when the treasure code itself becomes inactive (used for the mm:ss countdown timer in the guest panel)",
+    ),
 });
 
 /**
