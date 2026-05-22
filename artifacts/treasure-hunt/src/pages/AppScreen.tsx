@@ -360,18 +360,6 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   // 'all'  → no filter | 'active' → expiresAt is null OR > now | 'expired' → expiresAt <= now
   const [statsFilter, setStatsFilter] = useState<"all" | "active" | "expired">("all");
 
-  // Discoveries log dropdown open/closed (collapsible yellow box inside ODKRYCIA).
-  const [discoveriesOpen, setDiscoveriesOpen] = useState(false);
-
-  // Accordion module open state (left sidebar).
-  // Default: all three modules open so the 20/10/70 ratio is visible.
-  const [openModules, setOpenModules] = useState({
-    stats: true,
-    discoveries: true,
-    treasures: true,
-  });
-  const toggleModule = (key: "stats" | "discoveries" | "treasures") =>
-    setOpenModules((p) => ({ ...p, [key]: !p[key] }));
 
   // Image preview modal state (admin: view uploaded image for any marker)
   const [previewMarker, setPreviewMarker] = useState<MarkerItem | null>(null);
@@ -380,15 +368,9 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
 
-  // Mobile toggles: the admin side panel can be collapsed on mobile via arrow button
   const isMobile = useIsMobile();
-  const [showStats, setShowStats] = useState(true);
-  const [showTreasureList, setShowTreasureList] = useState(true);
-  // Sidebar collapsed state (mobile): hides the panel but keeps the toggle button visible.
-  // Default to collapsed on mobile per spec (hamburger reveals it); always open on desktop.
+  // Sidebar open/closed for mobile. Default closed; synced to breakpoint.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  // Sync collapsed state with breakpoint changes so the panel is hidden by
-  // default on mobile and always visible on desktop without user action.
   useEffect(() => {
     setSidebarCollapsed(isMobile);
   }, [isMobile]);
@@ -705,21 +687,20 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
           </form>
         )}
 
-        {/* ── Admin Side Panel (LEFT, accordion) ──
-            Desktop: fixed width column on the left, three accordion modules
-                     distributing 20% / 10% / 70% of vertical space when all open.
-            Mobile (<768px): hidden by default; a floating hamburger button
-                     toggles it; sidebar slides in from the left.
+        {/* ── Admin Side Panel (RIGHT) ──
+            Desktop: fixed 320 px column on the right, always visible.
+            Mobile: hidden by default; hamburger (top-right) slides it in from the right.
+            No accordion — all sections are always expanded and readable at once.
         ── */}
         {isAdmin && (
           <>
-            {/* Mobile floating hamburger toggle (top-left of map) */}
+            {/* Mobile hamburger — top-right corner of the map */}
             {isMobile && (
               <button
                 type="button"
                 onClick={() => setSidebarCollapsed((v) => !v)}
                 aria-label={sidebarCollapsed ? "Otwórz panel" : "Zamknij panel"}
-                className="absolute top-3 left-3 z-[1100] w-11 h-11 bg-white rounded-xl shadow-lg border border-gray-200 flex items-center justify-center active:scale-95 transition-transform"
+                className="absolute top-3 right-3 z-[1100] w-11 h-11 bg-white rounded-xl shadow-lg border border-gray-200 flex items-center justify-center active:scale-95 transition-transform"
               >
                 {sidebarCollapsed ? (
                   <Menu className="w-5 h-5 text-green-800" />
@@ -729,7 +710,7 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
               </button>
             )}
 
-            {/* Mobile backdrop when sidebar is open */}
+            {/* Mobile backdrop */}
             {isMobile && !sidebarCollapsed && (
               <button
                 type="button"
@@ -741,20 +722,18 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
 
             <aside
               className={`
-                absolute left-0 z-[1050] flex flex-col bg-[#fafbfc] border-r border-gray-200 shadow-xl
+                absolute right-0 top-0 bottom-0 z-[1050]
+                flex flex-col bg-[#fafbfc] border-l border-gray-200 shadow-xl
+                overflow-y-auto
                 transition-transform duration-300 ease-in-out
                 ${isMobile
-                  ? (sidebarCollapsed ? "-translate-x-full" : "translate-x-0")
+                  ? (sidebarCollapsed ? "translate-x-full" : "translate-x-0")
                   : "translate-x-0"}
               `}
-              style={{
-                top: 0,
-                bottom: 0,
-                width: isMobile ? "min(86vw, 340px)" : "320px",
-              }}
+              style={{ width: isMobile ? "min(86vw, 340px)" : "320px" }}
             >
-              {/* Sidebar header: admin label + Wyloguj */}
-              <div className="h-12 px-4 flex items-center justify-between border-b border-gray-200 bg-white shrink-0">
+              {/* ── Header ── */}
+              <div className="px-4 h-12 flex items-center justify-between border-b border-gray-200 bg-white shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <Shield className="w-4 h-4 text-green-700 shrink-0" />
                   <span className="text-sm font-semibold text-gray-800 truncate">
@@ -765,228 +744,183 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
                   variant="ghost"
                   size="sm"
                   onClick={onLogout}
-                  className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0"
                 >
                   <LogOut className="w-3.5 h-3.5 mr-1" />
                   <span className="text-xs">Wyloguj</span>
                 </Button>
               </div>
 
-              {/* Accordion column — flex children share vertical space by ratios 2:1:7 */}
-              <div className="flex-1 min-h-0 flex flex-col p-3 gap-3">
+              <div className="flex flex-col gap-4 p-3">
 
-                {/* ── Module 1: STATYSTYKI (flex 2 ≈ 20%) ── */}
-                <section
-                  className={`bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden transition-[flex-grow] duration-300 ${
-                    openModules.stats ? "flex-[2_1_0%] basis-0" : "flex-none"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleModule("stats")}
-                    className="h-11 px-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-                  >
-                    <span className="flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-green-700" />
-                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
-                        Statystyki
-                      </span>
+                {/* ── Combined: STATYSTYKI & ODKRYCIA ── */}
+                <section className="bg-white border border-gray-200 rounded-xl shadow-sm">
+                  {/* Section title */}
+                  <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-green-700" />
+                    <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
+                      Statystyki &amp; Odkrycia
                     </span>
-                    <ChevronDown
-                      className={`w-4 h-4 text-gray-500 transition-transform ${openModules.stats ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {openModules.stats && stats && (
-                    <div className="px-4 pb-3 flex-1 min-h-0 flex flex-col">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
+                  </div>
+
+                  <div className="px-4 py-3 flex flex-col gap-3">
+                    {/* Stat tiles */}
+                    {stats && (
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => setStatsFilter((f) => (f === "active" ? "all" : "active"))}
-                          className={`bg-white border rounded-xl px-3 py-2 text-left transition-all flex flex-col gap-0.5 ${
+                          className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
                             statsFilter === "active"
                               ? "ring-2 ring-green-500 border-green-300"
                               : "border-gray-200 hover:border-green-300"
                           }`}
                         >
                           <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
                             Aktywne
                           </span>
-                          <span className="font-bold text-2xl text-gray-900 leading-tight">{stats.activeMarkers}</span>
+                          <span className="font-bold text-2xl text-gray-900 leading-tight">
+                            {stats.activeMarkers}
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setStatsFilter((f) => (f === "expired" ? "all" : "expired"))}
-                          className={`bg-white border rounded-xl px-3 py-2 text-left transition-all flex flex-col gap-0.5 ${
+                          className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
                             statsFilter === "expired"
                               ? "ring-2 ring-red-400 border-red-200"
                               : "border-gray-200 hover:border-red-200"
                           }`}
                         >
                           <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
                             Wygasłe
                           </span>
-                          <span className="font-bold text-2xl text-gray-900 leading-tight">{stats.expiredMarkers}</span>
-                        </button>
-                      </div>
-                      {statsFilter !== "all" && (
-                        <button
-                          type="button"
-                          onClick={() => setStatsFilter("all")}
-                          className="mt-2 text-[11px] text-green-700 hover:underline self-start"
-                        >
-                          Wyczyść filtr
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </section>
-
-                {/* ── Module 2: ODKRYCIA (flex 1 ≈ 10%) ── */}
-                <section
-                  className={`bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden transition-[flex-grow] duration-300 ${
-                    openModules.discoveries ? "flex-[1_1_0%] basis-0" : "flex-none"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleModule("discoveries")}
-                    className="h-11 px-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Compass className="w-4 h-4 text-green-700" />
-                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
-                        Odkrycia
-                      </span>
-                    </span>
-                    <ChevronDown
-                      className={`w-4 h-4 text-gray-500 transition-transform ${openModules.discoveries ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {openModules.discoveries && discoveries && (
-                    <div className="px-4 pb-3 flex-1 min-h-0 flex flex-col gap-2">
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-[11px] text-gray-700 space-y-0.5">
-                        <div>
-                          Ostatni reset:{" "}
-                          <span className="font-mono font-semibold text-gray-900">
-                            {formatShortDate(discoveries.lastResetAt)}
+                          <span className="font-bold text-2xl text-gray-900 leading-tight">
+                            {stats.expiredMarkers}
                           </span>
-                        </div>
-                        <div>
-                          Odkrycia od resetu:{" "}
-                          <span className="font-mono font-bold text-gray-900">{discoveries.count}</span>
-                        </div>
+                        </button>
                       </div>
-                      <div className="flex items-center gap-2">
+                    )}
+                    {statsFilter !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setStatsFilter("all")}
+                        className="text-[11px] text-green-700 hover:underline self-start -mt-1"
+                      >
+                        Wyczyść filtr
+                      </button>
+                    )}
+
+                    {/* Divider */}
+                    <div className="border-t border-gray-100" />
+
+                    {/* Odkrycia data — always visible */}
+                    {discoveries && (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <Compass className="w-3.5 h-3.5 text-green-700 shrink-0" />
+                          <span className="text-xs font-bold tracking-wider text-gray-700 uppercase">Odkrycia</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[12px]">
+                          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                            <div className="text-gray-500 text-[10px] mb-0.5">Ostatni reset</div>
+                            <div className="font-mono font-semibold text-gray-900">
+                              {formatShortDate(discoveries.lastResetAt)}
+                            </div>
+                          </div>
+                          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                            <div className="text-gray-500 text-[10px] mb-0.5">Od resetu</div>
+                            <div className="font-mono font-bold text-2xl text-gray-900 leading-tight">
+                              {discoveries.count}
+                            </div>
+                          </div>
+                        </div>
+
                         <Button
                           type="button"
                           size="sm"
                           onClick={handleResetDiscoveries}
                           disabled={resetDiscoveries.isPending}
-                          className="h-7 px-3 text-[11px] font-semibold bg-amber-400 hover:bg-amber-500 text-amber-950 border-0"
+                          className="h-8 w-full text-[12px] font-semibold bg-amber-400 hover:bg-amber-500 text-amber-950 border-0"
                         >
-                          <RotateCcw className="w-3 h-3 mr-1" />
-                          Resetuj licznik
+                          <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                          Resetuj licznik odkryć
                         </Button>
-                        <button
-                          type="button"
-                          onClick={() => setDiscoveriesOpen((v) => !v)}
-                          className="ml-auto text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-0.5"
-                        >
-                          Log ({discoveries.recent.length})
-                          <ChevronDown
-                            className={`w-3 h-3 transition-transform ${discoveriesOpen ? "rotate-180" : ""}`}
-                          />
-                        </button>
-                      </div>
-                      {discoveriesOpen && (
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 font-mono text-[10px] leading-tight space-y-0.5 text-yellow-900 max-h-24 overflow-y-auto">
+
+                        {/* Recent activations log — always visible */}
+                        <div>
+                          <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                            Ostatnie aktywacje ({discoveries.recent.length})
+                          </div>
                           {discoveries.recent.length === 0 ? (
-                            <div className="italic text-yellow-700">Brak aktywacji od ostatniego resetu.</div>
+                            <div className="text-[11px] italic text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                              Brak aktywacji od ostatniego resetu.
+                            </div>
                           ) : (
-                            discoveries.recent.map((r) => (
-                              <div key={`${r.code}-${r.activatedAt}`}>
-                                ({formatLogTime(r.activatedAt)}) — {r.code}
-                              </div>
-                            ))
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 font-mono text-[10px] leading-relaxed space-y-0.5 text-yellow-900">
+                              {discoveries.recent.map((r) => (
+                                <div key={`${r.code}-${r.activatedAt}`}>
+                                  <span className="text-yellow-600">({formatLogTime(r.activatedAt)})</span>{" "}
+                                  — {r.code}
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+                  </div>
                 </section>
 
-                {/* ── Module 3: SKARBY (flex 7 ≈ 70%) ── */}
-                <section
-                  className={`bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden transition-[flex-grow] duration-300 ${
-                    openModules.treasures ? "flex-[7_1_0%] basis-0" : "flex-none"
-                  }`}
-                >
-                  {/* Header uses a div (not a nested <button>) so the inner refresh
-                      action can be a real button without producing invalid HTML. */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleModule("treasures")}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        toggleModule("treasures");
-                      }
-                    }}
-                    className="h-11 px-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors shrink-0 cursor-pointer select-none"
-                  >
-                    <span className="flex items-center gap-2">
+                {/* ── SKARBY list ── */}
+                <section className="bg-white border border-gray-200 rounded-xl shadow-sm">
+                  <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-green-700" />
                       <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
                         Skarby ({filteredMarkers.length}
                         {statsFilter !== "all" ? `/${markers.length}` : ""})
                       </span>
-                    </span>
-                    <span className="flex items-center gap-2">
+                    </div>
+                    <div className="flex items-center gap-1">
                       {saved && (
-                        <span className="text-[10px] font-bold text-green-600">✓</span>
+                        <span className="text-[10px] font-bold text-green-600">✓ Zapisano</span>
                       )}
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
-                        }}
-                        className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-gray-100"
+                        onClick={() => queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() })}
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
                         title="Odśwież"
                       >
-                        <RefreshCcw className="w-3 h-3 text-gray-500" />
+                        <RefreshCcw className="w-3.5 h-3.5 text-gray-500" />
                       </button>
-                      <ChevronDown
-                        className={`w-4 h-4 text-gray-500 transition-transform ${openModules.treasures ? "rotate-180" : ""}`}
-                      />
-                    </span>
-                  </div>
-                  {openModules.treasures && (
-                    <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 space-y-2">
-                      {filteredMarkers.map((m) => (
-                        <MarkerRow
-                          key={m.id}
-                          m={m}
-                          onFly={flyToMarker}
-                          onDelete={handleDeleteMarker}
-                          onCopy={handleCopyCode}
-                          onPreview={setPreviewMarker}
-                          isSelected={selectedMarkerId === m.id}
-                        />
-                      ))}
-                      {filteredMarkers.length === 0 && (
-                        <div className="text-center p-4 text-gray-500 text-sm">
-                          {markers.length === 0
-                            ? "Brak skarbów. Kliknij na mapę, aby dodać nowy."
-                            : "Brak skarbów pasujących do filtra."}
-                        </div>
-                      )}
                     </div>
-                  )}
+                  </div>
+
+                  <div className="p-3 flex flex-col gap-2">
+                    {filteredMarkers.map((m) => (
+                      <MarkerRow
+                        key={m.id}
+                        m={m}
+                        onFly={flyToMarker}
+                        onDelete={handleDeleteMarker}
+                        onCopy={handleCopyCode}
+                        onPreview={setPreviewMarker}
+                        isSelected={selectedMarkerId === m.id}
+                      />
+                    ))}
+                    {filteredMarkers.length === 0 && (
+                      <div className="text-center p-4 text-gray-500 text-sm">
+                        {markers.length === 0
+                          ? "Brak skarbów. Kliknij na mapę, aby dodać nowy."
+                          : "Brak skarbów pasujących do filtra."}
+                      </div>
+                    )}
+                  </div>
                 </section>
+
               </div>
             </aside>
           </>
