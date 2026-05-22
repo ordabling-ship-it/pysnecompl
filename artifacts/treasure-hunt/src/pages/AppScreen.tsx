@@ -26,7 +26,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import {
   LogOut, Search, Shield, User, Image as ImageIcon, Trash2, RefreshCcw,
   BarChart3, List, Loader2, Copy, Eye, X, ChevronRight, ChevronLeft, Clock,
-  Check, ChevronDown, RotateCcw, Menu, Compass, MapPin,
+  Check, ChevronDown, RotateCcw, Menu, Compass, MapPin, Sun, Moon, ChevronUp,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -175,6 +175,10 @@ type AppScreenProps = {
   user: { id: number; name: string; role: string } | null;
   guestData: GuestData | null;
   onLogout: () => void;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
+  loginMsg: string | null;
+  onLoginMsgDismiss: () => void;
 };
 
 type MarkerItem = {
@@ -335,7 +339,7 @@ function MarkerRow({
 // ─────────────────────────────────────────────
 // Main AppScreen component
 // ─────────────────────────────────────────────
-export default function AppScreen({ user, guestData, onLogout }: AppScreenProps) {
+export default function AppScreen({ user, guestData, onLogout, theme, onToggleTheme, loginMsg, onLoginMsgDismiss }: AppScreenProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Record<number, L.Marker>>({});
@@ -367,6 +371,22 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   // Address search (admin only)
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
+
+  // Stats & Discoveries section collapse (persisted to localStorage)
+  const [statsOpen, setStatsOpen] = useState<boolean>(() => {
+    return localStorage.getItem("th_stats_open") !== "false";
+  });
+  const toggleStats = () => {
+    setStatsOpen((v) => {
+      const next = !v;
+      localStorage.setItem("th_stats_open", String(next));
+      return next;
+    });
+  };
+
+  // Reverse-geocode cache: code → street label
+  const geocacheRef = useRef<Map<string, string>>(new Map());
+  const [streetLabels, setStreetLabels] = useState<Record<string, string>>({});
 
   const isMobile = useIsMobile();
   // Sidebar open/closed for mobile. Default closed; synced to breakpoint.
@@ -613,6 +633,52 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   };
 
   // ─────────────────────────────────────────────
+  // Login notification: auto-dismiss after 3 s
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!loginMsg) return;
+    const id = window.setTimeout(() => onLoginMsgDismiss(), 3000);
+    return () => window.clearTimeout(id);
+  }, [loginMsg, onLoginMsgDismiss]);
+
+  // ─────────────────────────────────────────────
+  // Reverse-geocode recent activations (Nominatim)
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!discoveries?.recent?.length || !markers.length) return;
+    for (const r of discoveries.recent) {
+      if (geocacheRef.current.has(r.code)) continue;
+      const marker = markers.find((m) => m.code === r.code);
+      if (!marker) {
+        geocacheRef.current.set(r.code, "Nieznana lokalizacja");
+        setStreetLabels((p) => ({ ...p, [r.code]: "Nieznana lokalizacja" }));
+        continue;
+      }
+      (async () => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${marker.lat}&lon=${marker.lng}`,
+            { headers: { Accept: "application/json" } }
+          );
+          const data = await res.json() as { address?: Record<string, string>; display_name?: string };
+          const street =
+            data.address?.road ??
+            data.address?.pedestrian ??
+            data.address?.path ??
+            data.display_name?.split(",")[0] ??
+            "Nieznana lokalizacja";
+          geocacheRef.current.set(r.code, street);
+          setStreetLabels((p) => ({ ...p, [r.code]: street }));
+        } catch {
+          geocacheRef.current.set(r.code, "Nieznana lokalizacja");
+          setStreetLabels((p) => ({ ...p, [r.code]: "Nieznana lokalizacja" }));
+        }
+      })();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discoveries?.recent, markers]);
+
+  // ─────────────────────────────────────────────
   // Guest: code expiry timer in topbar info chip
   // ─────────────────────────────────────────────
   const [guestNow, setGuestNow] = useState(Date.now());
@@ -629,7 +695,7 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
       <header className="h-16 flex items-center justify-between px-3 sm:px-4 bg-white border-b shadow-sm z-[1000] relative shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-2xl">🪙</span>
-          <h1 className="font-bold text-lg hidden sm:block text-green-950">Treasure Hunt</h1>
+          <h1 className="font-bold text-lg hidden sm:block text-green-950 dark:text-green-100">Delicious</h1>
           <Badge
             variant="outline"
             className={isAdmin ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-blue-100 text-blue-800 border-blue-200"}
@@ -652,6 +718,17 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
           {isAdmin && (
             <span className="text-sm font-medium text-gray-600 hidden md:block">{user?.name}</span>
           )}
+
+          {/* Light / dark mode toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleTheme}
+            title={theme === "dark" ? "Tryb jasny" : "Tryb ciemny"}
+            className="w-8 h-8 text-gray-500 hover:text-amber-600 hover:bg-amber-50"
+          >
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </Button>
 
           <Button
             variant="ghost"
@@ -753,125 +830,147 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
 
               <div className="flex flex-col gap-4 p-3">
 
-                {/* ── Combined: STATYSTYKI & ODKRYCIA ── */}
+                {/* ── Combined: STATYSTYKI & ODKRYCIA (collapsible) ── */}
                 <section className="bg-white border border-gray-200 rounded-xl shadow-sm">
-                  {/* Section title */}
-                  <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-green-700" />
-                    <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
-                      Statystyki &amp; Odkrycia
-                    </span>
-                  </div>
+                  {/* Section title — click anywhere on header to collapse */}
+                  <button
+                    type="button"
+                    onClick={toggleStats}
+                    className="w-full px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2 hover:bg-gray-50 rounded-t-xl transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-green-700" />
+                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
+                        Statystyki &amp; Odkrycia
+                      </span>
+                      {/* Compact summary visible when collapsed */}
+                      {!statsOpen && stats && discoveries && (
+                        <span className="text-[10px] text-gray-400 font-normal ml-1">
+                          {stats.activeMarkers}A / {stats.expiredMarkers}W · {discoveries.count} odkryć
+                        </span>
+                      )}
+                    </div>
+                    {statsOpen
+                      ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      : <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    }
+                  </button>
 
-                  <div className="px-4 py-3 flex flex-col gap-3">
-                    {/* Stat tiles */}
-                    {stats && (
-                      <div className="grid grid-cols-2 gap-2">
+                  {statsOpen && (
+                    <div className="px-4 py-3 flex flex-col gap-3">
+                      {/* Stat tiles */}
+                      {stats && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setStatsFilter((f) => (f === "active" ? "all" : "active"))}
+                            className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
+                              statsFilter === "active"
+                                ? "ring-2 ring-green-500 border-green-300"
+                                : "border-gray-200 hover:border-green-300"
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                              Aktywne
+                            </span>
+                            <span className="font-bold text-2xl text-gray-900 leading-tight">
+                              {stats.activeMarkers}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStatsFilter((f) => (f === "expired" ? "all" : "expired"))}
+                            className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
+                              statsFilter === "expired"
+                                ? "ring-2 ring-red-400 border-red-200"
+                                : "border-gray-200 hover:border-red-200"
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                              Wygasłe
+                            </span>
+                            <span className="font-bold text-2xl text-gray-900 leading-tight">
+                              {stats.expiredMarkers}
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                      {statsFilter !== "all" && (
                         <button
                           type="button"
-                          onClick={() => setStatsFilter((f) => (f === "active" ? "all" : "active"))}
-                          className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
-                            statsFilter === "active"
-                              ? "ring-2 ring-green-500 border-green-300"
-                              : "border-gray-200 hover:border-green-300"
-                          }`}
+                          onClick={() => setStatsFilter("all")}
+                          className="text-[11px] text-green-700 hover:underline self-start -mt-1"
                         >
-                          <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-                            Aktywne
-                          </span>
-                          <span className="font-bold text-2xl text-gray-900 leading-tight">
-                            {stats.activeMarkers}
-                          </span>
+                          Wyczyść filtr
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setStatsFilter((f) => (f === "expired" ? "all" : "expired"))}
-                          className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
-                            statsFilter === "expired"
-                              ? "ring-2 ring-red-400 border-red-200"
-                              : "border-gray-200 hover:border-red-200"
-                          }`}
-                        >
-                          <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
-                            Wygasłe
-                          </span>
-                          <span className="font-bold text-2xl text-gray-900 leading-tight">
-                            {stats.expiredMarkers}
-                          </span>
-                        </button>
-                      </div>
-                    )}
-                    {statsFilter !== "all" && (
-                      <button
-                        type="button"
-                        onClick={() => setStatsFilter("all")}
-                        className="text-[11px] text-green-700 hover:underline self-start -mt-1"
-                      >
-                        Wyczyść filtr
-                      </button>
-                    )}
+                      )}
 
-                    {/* Divider */}
-                    <div className="border-t border-gray-100" />
+                      {/* Divider */}
+                      <div className="border-t border-gray-100" />
 
-                    {/* Odkrycia data — always visible */}
-                    {discoveries && (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <Compass className="w-3.5 h-3.5 text-green-700 shrink-0" />
-                          <span className="text-xs font-bold tracking-wider text-gray-700 uppercase">Odkrycia</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-[12px]">
-                          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                            <div className="text-gray-500 text-[10px] mb-0.5">Ostatni reset</div>
-                            <div className="font-mono font-semibold text-gray-900">
-                              {formatShortDate(discoveries.lastResetAt)}
+                      {/* Odkrycia data */}
+                      {discoveries && (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2">
+                            <Compass className="w-3.5 h-3.5 text-green-700 shrink-0" />
+                            <span className="text-xs font-bold tracking-wider text-gray-700 uppercase">Odkrycia</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-[12px]">
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                              <div className="text-gray-500 text-[10px] mb-0.5">Ostatni reset</div>
+                              <div className="font-mono font-semibold text-gray-900">
+                                {formatShortDate(discoveries.lastResetAt)}
+                              </div>
+                            </div>
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                              <div className="text-gray-500 text-[10px] mb-0.5">Od resetu</div>
+                              <div className="font-mono font-bold text-2xl text-gray-900 leading-tight">
+                                {discoveries.count}
+                              </div>
                             </div>
                           </div>
-                          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                            <div className="text-gray-500 text-[10px] mb-0.5">Od resetu</div>
-                            <div className="font-mono font-bold text-2xl text-gray-900 leading-tight">
-                              {discoveries.count}
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleResetDiscoveries}
+                            disabled={resetDiscoveries.isPending}
+                            className="h-8 w-full text-[12px] font-semibold bg-amber-400 hover:bg-amber-500 text-amber-950 border-0"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                            Resetuj licznik odkryć
+                          </Button>
+
+                          {/* Recent activations log — code + time + street name */}
+                          <div>
+                            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                              Ostatnie aktywacje ({discoveries.recent.length})
                             </div>
+                            {discoveries.recent.length === 0 ? (
+                              <div className="text-[11px] italic text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                Brak aktywacji od ostatniego resetu.
+                              </div>
+                            ) : (
+                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 font-mono text-[10px] leading-relaxed space-y-0.5 text-yellow-900">
+                                {discoveries.recent.map((r) => (
+                                  <div key={`${r.code}-${r.activatedAt}`}>
+                                    <span className="text-yellow-600">({formatLogTime(r.activatedAt)})</span>
+                                    {" — "}{r.code}
+                                    {" — "}
+                                    <span className="text-yellow-700 italic">
+                                      {streetLabels[r.code] ?? "…"}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
-
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={handleResetDiscoveries}
-                          disabled={resetDiscoveries.isPending}
-                          className="h-8 w-full text-[12px] font-semibold bg-amber-400 hover:bg-amber-500 text-amber-950 border-0"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                          Resetuj licznik odkryć
-                        </Button>
-
-                        {/* Recent activations log — always visible */}
-                        <div>
-                          <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                            Ostatnie aktywacje ({discoveries.recent.length})
-                          </div>
-                          {discoveries.recent.length === 0 ? (
-                            <div className="text-[11px] italic text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                              Brak aktywacji od ostatniego resetu.
-                            </div>
-                          ) : (
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 font-mono text-[10px] leading-relaxed space-y-0.5 text-yellow-900">
-                              {discoveries.recent.map((r) => (
-                                <div key={`${r.code}-${r.activatedAt}`}>
-                                  <span className="text-yellow-600">({formatLogTime(r.activatedAt)})</span>{" "}
-                                  — {r.code}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </section>
 
                 {/* ── SKARBY list ── */}
@@ -924,6 +1023,15 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
               </div>
             </aside>
           </>
+        )}
+
+        {/* ── Admin login welcome notification (bottom-center, 3 s auto-dismiss) ── */}
+        {loginMsg && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[2000] pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="px-5 py-2.5 rounded-2xl bg-white/90 backdrop-blur shadow-lg border border-green-100 text-[13px] font-medium text-green-900 whitespace-nowrap">
+              {loginMsg}
+            </div>
+          </div>
         )}
 
         {/* Guest: code expiry mm:ss countdown (bottom-center, visible on map).

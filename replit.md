@@ -1,4 +1,4 @@
-# Treasure Hunt – Szczecin
+# Delicious – Szczecin
 
 ## Overview
 
@@ -25,7 +25,7 @@ A full-stack geo-treasure hunt web app for Szczecin, Poland. Admins hide treasur
 
 ## Roles
 
-- **Admin** — can add/delete treasures, see all markers on map with codes. Login: `admin` / `haslo123`
+- **Admin** — can add/delete treasures, see all markers on map with codes. Login: `garlic` / `Aszwarganda666!@#`
 - **Guest** — enters a treasure code, sees that one treasure on map. Codes: TRX7K, SCZ2M, JKB9Q, ZMK4F (all expire 1h from seed time)
 
 ## Key Commands
@@ -62,7 +62,7 @@ All admin-only routes (POST/DELETE `/markers`, `/stats`, `/discoveries`, `/disco
 
 ## Admin credentials
 
-- Username: `admin` / Password: `haslo123`
+- Username: `garlic` / Password: `Aszwarganda666!@#`
 
 ## Sample treasure codes (seeded at startup, expire 1h after seeding)
 

@@ -38,14 +38,52 @@ export function getOrCreateGuestToken(): string {
   return token;
 }
 
+function getAutoTheme(): "light" | "dark" {
+  const h = new Date().getHours();
+  return h >= 6 && h < 20 ? "light" : "dark";
+}
+
 function MainApp() {
   const [user, setUser] = useState<{ id: number; name: string; role: string } | null>(null);
   const [guestData, setGuestData] = useState<GuestData | null>(null);
   const [hydrating, setHydrating] = useState(true);
 
+  // Welcome notification shown after admin login at bottom-center of screen.
+  const [loginMsg, setLoginMsg] = useState<string | null>(null);
+
+  // ── Theme management (light / dark) ──────────────────────────────────────
+  // Priority: manual override in localStorage → time-based auto selection.
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const saved = localStorage.getItem("th_theme");
+    if (saved === "light" || saved === "dark") return saved;
+    return getAutoTheme();
+  });
+
+  // Apply/remove the .dark class on <html> whenever theme changes.
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
+  // Auto-switch every minute unless the user has manually overridden.
+  useEffect(() => {
+    if (localStorage.getItem("th_theme_manual") === "true") return;
+    const check = () => setTheme(getAutoTheme());
+    check();
+    const id = window.setInterval(check, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const handleToggleTheme = () => {
+    setTheme((t) => {
+      const next: "light" | "dark" = t === "light" ? "dark" : "light";
+      localStorage.setItem("th_theme", next);
+      localStorage.setItem("th_theme_manual", "true");
+      return next;
+    });
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
   // On reload, if we have a saved guest session, ask the server for fresh state.
-  // The server returns the SHARED marker timer (set on first activation), so
-  // the countdown picks up wherever it left off and cannot be restarted.
   useEffect(() => {
     const saved = localStorage.getItem(GUEST_SESSION_KEY);
     if (!saved) {
@@ -64,6 +102,11 @@ function MainApp() {
       setHydrating(false);
     }
   }, []);
+
+  const handleAdminLogin = (data: { id: number; name: string; role: string }) => {
+    setUser(data);
+    setLoginMsg(`Witaj, ${data.name}!`);
+  };
 
   const handleGuestLogin = (data: GuestData) => {
     setGuestData(data);
@@ -85,10 +128,20 @@ function MainApp() {
   }
 
   if (!user && !guestData) {
-    return <AuthScreen onLoginAdmin={setUser} onLoginGuest={handleGuestLogin} />;
+    return <AuthScreen onLoginAdmin={handleAdminLogin} onLoginGuest={handleGuestLogin} />;
   }
 
-  return <AppScreen user={user} guestData={guestData} onLogout={handleLogout} />;
+  return (
+    <AppScreen
+      user={user}
+      guestData={guestData}
+      onLogout={handleLogout}
+      theme={theme}
+      onToggleTheme={handleToggleTheme}
+      loginMsg={loginMsg}
+      onLoginMsgDismiss={() => setLoginMsg(null)}
+    />
+  );
 }
 
 function Router() {

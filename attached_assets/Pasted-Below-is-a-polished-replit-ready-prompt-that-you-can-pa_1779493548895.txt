@@ -1,0 +1,143 @@
+Below is a polished, "replit-ready" prompt that you can paste directly into Replit AI. It's organized, unambiguous, and describes all changes as specific tasks to implement:
+
+⸻
+
+🔧 PROMPT FOR REPLIT AI
+
+You're working on an existing "Treasure Hunt" web application. Make the following changes in a safe, consistent, and production-ready manner. Don't break the existing logic—just modify it.
+
+⸻
+
+1. 🔄 Change the project name
+
+Change all instances of the name:
+
+"Treasure Hunt" → "Delicious"
+
+Applies to:
+
+* UI (headers, text logo)
+* page title (HTML / browser tab)
+* any API / view names
+
+⸻
+
+2. 🌗 Light and Dark Mode (Dark Mode)
+
+Add a theme system:
+
+* LIGHT (light) and DARK (dark) modes
+* Automatic switching:
+* from dawn to dusk → LIGHT
+* from dusk to dawn → DARK
+
+Requirements:
+
+* detects the user's local time (JS Date)
+* manual override (if a theme system already exists – keep it)
+* saves preferences in localStorage
+
+Style:
+
+* DARK: dark background, high contrast, reduced brightness
+* LIGHT: current default style
+
+⸻
+
+3. 🔐 Changing admin login details
+
+Change login details in the admin panel:
+
+OLD:
+
+* login: admin
+* password: haslo123
+
+NEW:
+
+* login: garlic
+* password: Aszwarganda666!@#
+
+Important:
+
+* make sure the change works in the backend (auth / DB / config)
+* if the password is hashed → update the hash
+* do not leave old data anywhere in the code
+
+⸻
+
+4. 🖼️ Photo upload - optimization and cleanup
+
+Fix the photo upload system:
+
+Requirements:
+
+* automatic compression of photos before saving (for faster loading)
+* e.g., JPEG/WebP compression
+* size reduction without visible loss of quality
+* when deleting a pin:
+* also delete all assigned photos from the server (hard delete)
+* no "orphaned" photos files" on the server
+
+⸻
+
+5. 🪪 UI login message
+
+Improve messages like:
+
+"Hello admin"
+
+UI requirements:
+
+* display centered at the bottom of the screen (bottom-center)
+* cannot overlap other windows/modals
+* reduce font size by 20%
+* add a subtle background or shadow for readability
+
+⸻
+
+6. 📊 Admin Panel – "STATISTICS & DISCOVERIES" sidebar
+
+Add functionality:
+
+* ability to collapse/minimize the "STATISTICS & DISCOVERIES" sidebar
+* saved state (localStorage or state backend)
+* when collapsed:
+* reduce font size by 20%
+* compact view (icons or shortcuts)
+
+⸻
+
+7. ⏱️ "Activations" format
+
+Change display format Activation:
+
+❌ Old format:
+
+(hh:mm) - (code)
+
+✅ New format:
+
+(hh:mm) - (code) - (street name)
+
+Requirements:
+
+* Retrieve and display the street name from the pin location data
+* If no street, display "Unknown location"
+* Maintain time sorting
+
+⸻
+
+⚙️ General Requirements
+
+* Do not break the existing project structure
+* Maintain API and data compatibility
+* Every change must be testable and logically separated
+* If something requires refactoring, do minimal work, without rebuilding the entire application
+
+⸻
+
+If you want, I can also:
+
+* Convert this into a prompt for a specific stack (React / Next / Node / Firebase)
+* Or create an "enterprise-grade" version for production deployment 🚀

@@ -49,8 +49,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest }: AuthScreenPro
       {
         onSuccess: (data) => {
           onLoginAdmin(data);
-          // Compact welcome — single short line, ~50% smaller than the prior two-line version.
-          toast({ title: `Witaj, ${data.name}` });
+          // Welcome notification is rendered by AppScreen as a bottom-center overlay.
         },
         onError: () => {
           toast({ variant: "destructive", title: "Błąd", description: "Nieprawidłowe dane logowania." });
@@ -68,7 +67,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest }: AuthScreenPro
               <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
                 <Coins className="w-8 h-8 text-amber-500" />
               </div>
-              <CardTitle className="text-3xl font-bold text-green-950">Treasure Hunt</CardTitle>
+              <CardTitle className="text-3xl font-bold text-green-950">Delicious</CardTitle>
               <CardDescription className="text-green-800/70 text-lg">Wpisz kod, aby odkryć skarb</CardDescription>
             </CardHeader>
             <form onSubmit={handleGuestSubmit}>
