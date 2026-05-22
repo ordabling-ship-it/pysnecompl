@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "BagHunter"
+title = "pysne"
 version = "1.0.0"
 id = "artifacts/treasure-hunt"
 router = "path"

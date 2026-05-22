@@ -1,0 +1,63 @@
+Title: Clean Responsive Map Sidebar with Collapsible Accordion Modules and Strict Height Proportions
+
+Description:
+Create a web application with a full-screen interactive map as the background and a clean, modern sidebar overlay on the left side. The sidebar must feature three collapsible accordion modules that distribute vertical screen space according to specific percentage ratios when expanded, and handle mobile responsiveness elegantly.
+
+Technical Requirements:
+
+1. Layout & Sidebar Mechanics:
+
+Desktop View: The sidebar is fixed on the left side, occupying a neat vertical column over the full-screen map.
+
+Mobile View (<768px): The entire sidebar is hidden by default. A prominent floating "hamburger" menu button appears on the map. Clicking this button toggles the sidebar smoothly into view (sliding from the left).
+
+Sidebar Body: Uses a flexbox column layout (display: flex; flex-direction: column; height: 100vh;) to perfectly manage the height of its inner sections.
+
+2. Accordion Behavior & Height Proportions (Crucial):
+The sidebar contains three distinct modules: STATYSTYKI (Statistics), ODKRYCIA (Discoveries), and SKARBY (Treasures).
+
+Each module must have a clickable header with a title, an icon, and a toggle arrow (^ or v) indicating its open/closed state.
+
+When all modules are expanded, they must strictly distribute the available vertical container space in the following ratio:
+
+STATYSTYKI: ~20% of the height.
+
+ODKRYCIA: ~10% of the height.
+
+SKARBY: ~70% of the height.
+
+Flexibility & Collapsing: Use CSS Flexbox (flex property ratios like flex: 2;, flex: 1;, flex: 7;) or CSS Grid to maintain these proportions. When a user clicks a module's header to collapse it, that specific module's content should hide smoothly, its flex allocation should drop to none/0, and the remaining expanded modules should dynamically stretch to fill the newly freed space.
+
+Scroll Management: The SKARBY section, taking up 70% of the space, contains a list of items. It must have overflow-y: auto; so users can scroll through the treasures inside that module without making the entire sidebar scroll.
+
+3. Module Design & Content (Based on Provided UI):
+
+Top Bar/Header: Includes user status "admin" and a clear "Wyloguj" (Logout) button.
+
+Module 1: STATYSTYKI (20% height when open): * Contains two clean, horizontal grid cards. Left card: "Aktywne" (Active) with a green indicator and a large number '2'. Right card: "Wygasłe" (Expired) with a subtle red indicator and number '1'.
+
+A small "Wyczyść filtr" text link at the bottom.
+
+Module 2: ODKRYCIA (10% height when open):
+
+A light compact box displaying text: "Ostatni reset: 23/05/26" and "Odkrycia od resetu: 0".
+
+A clean, modern yellow accent button labeled "Resetuj licznik".
+
+Module 3: SKARBY (70% height when open):
+
+Header displays "SKARBY (2/3)".
+
+Inside is a scrollable container with clean white cards for individual locations.
+
+Card 1: "BAR JULIAsd" with a bold badge "F7VFQ" (and a copy icon), activation status lines, a trash bin icon for deletion, and a "NIEAKTYWNY (60:00)" label.
+
+Card 2: "Szczecin" with a bold badge "WQS1S" and a green "AKTYWNY" status checkmark.
+
+4. Styling Guidelines:
+
+Use a clean, modern sans-serif font (like Inter or Roboto).
+
+Maintain a light, minimalist color palette (off-white backgrounds, soft gray borders, rounded corners (border-radius: 12px;) for cards).
+
+Add smooth CSS transitions for the collapsing/expanding animations and the mobile sidebar slide-in effect.

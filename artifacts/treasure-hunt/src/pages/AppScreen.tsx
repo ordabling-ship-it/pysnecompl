@@ -26,7 +26,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import {
   LogOut, Search, Shield, User, Image as ImageIcon, Trash2, RefreshCcw,
   BarChart3, List, Loader2, Copy, Eye, X, ChevronRight, ChevronLeft, Clock,
-  Check, ChevronDown, RotateCcw,
+  Check, ChevronDown, RotateCcw, Menu, Compass, MapPin,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -360,8 +360,18 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   // 'all'  → no filter | 'active' → expiresAt is null OR > now | 'expired' → expiresAt <= now
   const [statsFilter, setStatsFilter] = useState<"all" | "active" | "expired">("all");
 
-  // Discoveries log dropdown open/closed (collapsible yellow box).
+  // Discoveries log dropdown open/closed (collapsible yellow box inside ODKRYCIA).
   const [discoveriesOpen, setDiscoveriesOpen] = useState(false);
+
+  // Accordion module open state (left sidebar).
+  // Default: all three modules open so the 20/10/70 ratio is visible.
+  const [openModules, setOpenModules] = useState({
+    stats: true,
+    discoveries: true,
+    treasures: true,
+  });
+  const toggleModule = (key: "stats" | "discoveries" | "treasures") =>
+    setOpenModules((p) => ({ ...p, [key]: !p[key] }));
 
   // Image preview modal state (admin: view uploaded image for any marker)
   const [previewMarker, setPreviewMarker] = useState<MarkerItem | null>(null);
@@ -374,8 +384,14 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
   const isMobile = useIsMobile();
   const [showStats, setShowStats] = useState(true);
   const [showTreasureList, setShowTreasureList] = useState(true);
-  // Sidebar collapsed state (mobile): hides the panel but keeps the toggle button visible
+  // Sidebar collapsed state (mobile): hides the panel but keeps the toggle button visible.
+  // Default to collapsed on mobile per spec (hamburger reveals it); always open on desktop.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Sync collapsed state with breakpoint changes so the panel is hidden by
+  // default on mobile and always visible on desktop without user action.
+  useEffect(() => {
+    setSidebarCollapsed(isMobile);
+  }, [isMobile]);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -642,29 +658,6 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
         </div>
 
         <div className="flex items-center gap-1 sm:gap-3">
-          {/* Mobile-only admin panel toggles */}
-          {isAdmin && isMobile && (
-            <>
-              <Button
-                variant={showStats ? "default" : "outline"}
-                size="icon"
-                className="w-8 h-8"
-                onClick={() => setShowStats((v) => !v)}
-                title="Pokaż/ukryj statystyki"
-              >
-                <BarChart3 className="w-4 h-4" />
-              </Button>
-              <Button
-                variant={showTreasureList ? "default" : "outline"}
-                size="icon"
-                className="w-8 h-8"
-                onClick={() => setShowTreasureList((v) => !v)}
-                title="Pokaż/ukryj listę skarbów"
-              >
-                <List className="w-4 h-4" />
-              </Button>
-            </>
-          )}
 
           {/* Guest: show discovered treasure name */}
           {guestData && (
@@ -712,207 +705,291 @@ export default function AppScreen({ user, guestData, onLogout }: AppScreenProps)
           </form>
         )}
 
-        {/* ── Admin Side Panel ──
-            Desktop: fixed width 72–80, full glass.
-            Mobile: max 65vw, higher transparency (70%), glassmorphism,
-                    with a collapse arrow button on the left edge.
+        {/* ── Admin Side Panel (LEFT, accordion) ──
+            Desktop: fixed width column on the left, three accordion modules
+                     distributing 20% / 10% / 70% of vertical space when all open.
+            Mobile (<768px): hidden by default; a floating hamburger button
+                     toggles it; sidebar slides in from the left.
         ── */}
         {isAdmin && (
-          <div
-            className={`
-              absolute top-4 right-0 flex flex-col gap-4 z-[1000]
-              transition-transform duration-300 ease-in-out
-              ${isMobile
-                ? `${sidebarCollapsed ? "translate-x-full" : "translate-x-0"}`
-                : "translate-x-0"
-              }
-            `}
-            style={{
-              width: isMobile ? "min(65vw, 280px)" : "320px",
-              // Definite height range (top + bottom) is required for the inner
-              // `flex-1 min-h-0` treasure list to grow and become scrollable.
-              // Bottom offset leaves room for the centered search bar.
-              top: "1rem",
-              bottom: "5rem",
-              paddingRight: "12px",
-            }}
-          >
-            {/* Collapse toggle (mobile only) — floats to the left of the panel.
-                Per spec the button sits ~10% lower (top-[10%]) so it doesn't crowd
-                the topbar and is easier to thumb-reach. */}
+          <>
+            {/* Mobile floating hamburger toggle (top-left of map) */}
             {isMobile && (
               <button
+                type="button"
                 onClick={() => setSidebarCollapsed((v) => !v)}
-                className="absolute -left-8 top-[10%] w-8 h-10 bg-white/80 backdrop-blur rounded-l-lg border border-r-0 border-white/40 flex items-center justify-center shadow-md z-10"
-                aria-label={sidebarCollapsed ? "Rozwiń panel" : "Zwiń panel"}
+                aria-label={sidebarCollapsed ? "Otwórz panel" : "Zamknij panel"}
+                className="absolute top-3 left-3 z-[1100] w-11 h-11 bg-white rounded-xl shadow-lg border border-gray-200 flex items-center justify-center active:scale-95 transition-transform"
               >
-                {sidebarCollapsed ? <ChevronLeft className="w-4 h-4 text-green-800" /> : <ChevronRight className="w-4 h-4 text-green-800" />}
+                {sidebarCollapsed ? (
+                  <Menu className="w-5 h-5 text-green-800" />
+                ) : (
+                  <X className="w-5 h-5 text-green-800" />
+                )}
               </button>
             )}
 
-            {/* Stats card */}
-            {stats && showStats && (
-              <div
-                className="shadow-lg rounded-lg p-4 pointer-events-auto border"
-                style={{
-                  background: isMobile ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.97)",
-                  backdropFilter: "blur(12px)",
-                  WebkitBackdropFilter: "blur(12px)",
-                  borderColor: isMobile ? "rgba(255,255,255,0.35)" : "#dcfce7",
-                }}
-              >
-                <h3 className="font-bold text-sm text-green-900 mb-2 uppercase tracking-wider">Statystyki</h3>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  {/* Click "Aktywne" → toggle filter to active-only markers (and back to all). */}
-                  <button
-                    type="button"
-                    onClick={() => setStatsFilter((f) => (f === "active" ? "all" : "active"))}
-                    className={`bg-green-50/80 p-2 rounded text-left transition-all ${
-                      statsFilter === "active" ? "ring-2 ring-green-600" : "hover:bg-green-100/80"
-                    }`}
-                    title="Filtruj: tylko aktywne"
-                  >
-                    <div className="text-green-600/70 text-xs">Aktywne</div>
-                    <div className="font-bold text-green-800">{stats.activeMarkers}</div>
-                  </button>
-                  {/* Click "Wygasłe" → toggle filter to expired-only markers (and back to all). */}
-                  <button
-                    type="button"
-                    onClick={() => setStatsFilter((f) => (f === "expired" ? "all" : "expired"))}
-                    className={`bg-gray-50/80 p-2 rounded text-left transition-all ${
-                      statsFilter === "expired" ? "ring-2 ring-gray-500" : "hover:bg-gray-100/80"
-                    }`}
-                    title="Filtruj: tylko wygasłe"
-                  >
-                    <div className="text-gray-500 text-xs">Wygasłe</div>
-                    <div className="font-bold text-gray-700">{stats.expiredMarkers}</div>
-                  </button>
-                </div>
-                {statsFilter !== "all" && (
-                  <button
-                    type="button"
-                    onClick={() => setStatsFilter("all")}
-                    className="mt-2 text-[11px] text-green-700 hover:underline"
-                  >
-                    Wyczyść filtr
-                  </button>
-                )}
-              </div>
+            {/* Mobile backdrop when sidebar is open */}
+            {isMobile && !sidebarCollapsed && (
+              <button
+                type="button"
+                aria-label="Zamknij panel"
+                onClick={() => setSidebarCollapsed(true)}
+                className="absolute inset-0 bg-black/30 z-[1040] animate-in fade-in duration-200"
+              />
             )}
 
-            {/* ── Odkrycia card (global counter + reset + recent activations log) ── */}
-            {discoveries && showStats && (
-              <div
-                className="shadow-lg rounded-lg pointer-events-auto border overflow-hidden"
-                style={{
-                  background: isMobile ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.97)",
-                  backdropFilter: "blur(12px)",
-                  WebkitBackdropFilter: "blur(12px)",
-                  borderColor: isMobile ? "rgba(255,255,255,0.35)" : "#dcfce7",
-                }}
-              >
-                <div className="p-4">
-                  <h3 className="font-bold text-sm text-green-900 mb-2 uppercase tracking-wider">
-                    Odkrycia
-                  </h3>
-                  <div className="bg-amber-50/90 border border-amber-200 rounded p-2 text-[11px] text-amber-900 space-y-1">
-                    <div>Ostatni reset: <span className="font-mono font-semibold">{formatShortDate(discoveries.lastResetAt)}</span></div>
-                    <div>Odkrycia od resetu: <span className="font-mono font-bold text-amber-800">{discoveries.count}</span></div>
-                    <div className="flex justify-end pt-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-6 px-2 text-[10px] border-amber-300 text-amber-800 hover:bg-amber-100"
-                        onClick={handleResetDiscoveries}
-                        disabled={resetDiscoveries.isPending}
-                      >
-                        <RotateCcw className="w-3 h-3 mr-1" />
-                        Reset
-                      </Button>
-                    </div>
-                  </div>
+            <aside
+              className={`
+                absolute left-0 z-[1050] flex flex-col bg-[#fafbfc] border-r border-gray-200 shadow-xl
+                transition-transform duration-300 ease-in-out
+                ${isMobile
+                  ? (sidebarCollapsed ? "-translate-x-full" : "translate-x-0")
+                  : "translate-x-0"}
+              `}
+              style={{
+                top: 0,
+                bottom: 0,
+                width: isMobile ? "min(86vw, 340px)" : "320px",
+              }}
+            >
+              {/* Sidebar header: admin label + Wyloguj */}
+              <div className="h-12 px-4 flex items-center justify-between border-b border-gray-200 bg-white shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Shield className="w-4 h-4 text-green-700 shrink-0" />
+                  <span className="text-sm font-semibold text-gray-800 truncate">
+                    {user?.name ?? "admin"}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onLogout}
+                  className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                >
+                  <LogOut className="w-3.5 h-3.5 mr-1" />
+                  <span className="text-xs">Wyloguj</span>
+                </Button>
+              </div>
 
-                  {/* Collapsible yellow log box: 5 most recent activations (newest on top) */}
+              {/* Accordion column — flex children share vertical space by ratios 2:1:7 */}
+              <div className="flex-1 min-h-0 flex flex-col p-3 gap-3">
+
+                {/* ── Module 1: STATYSTYKI (flex 2 ≈ 20%) ── */}
+                <section
+                  className={`bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden transition-[flex-grow] duration-300 ${
+                    openModules.stats ? "flex-[2_1_0%] basis-0" : "flex-none"
+                  }`}
+                >
                   <button
                     type="button"
-                    onClick={() => setDiscoveriesOpen((v) => !v)}
-                    className="mt-2 w-full flex items-center justify-between text-[11px] text-green-800 hover:text-green-900"
+                    onClick={() => toggleModule("stats")}
+                    className="h-11 px-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
                   >
-                    <span>Ostatnie aktywacje ({discoveries.recent.length})</span>
-                    <ChevronDown className={`w-3 h-3 transition-transform ${discoveriesOpen ? "rotate-180" : ""}`} />
+                    <span className="flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-green-700" />
+                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
+                        Statystyki
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-500 transition-transform ${openModules.stats ? "rotate-180" : ""}`}
+                    />
                   </button>
-                  {discoveriesOpen && (
-                    <div className="mt-1 bg-yellow-100 border border-yellow-300 rounded p-2 font-mono text-[8px] leading-tight space-y-0.5 text-yellow-900">
-                      {discoveries.recent.length === 0 ? (
-                        <div className="italic text-yellow-700">Brak aktywacji od ostatniego resetu.</div>
-                      ) : (
-                        discoveries.recent.map((r) => (
-                          <div key={`${r.code}-${r.activatedAt}`}>
-                            ({formatLogTime(r.activatedAt)}) — {r.code}
-                          </div>
-                        ))
+                  {openModules.stats && stats && (
+                    <div className="px-4 pb-3 flex-1 min-h-0 flex flex-col">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => setStatsFilter((f) => (f === "active" ? "all" : "active"))}
+                          className={`bg-white border rounded-xl px-3 py-2 text-left transition-all flex flex-col gap-0.5 ${
+                            statsFilter === "active"
+                              ? "ring-2 ring-green-500 border-green-300"
+                              : "border-gray-200 hover:border-green-300"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            Aktywne
+                          </span>
+                          <span className="font-bold text-2xl text-gray-900 leading-tight">{stats.activeMarkers}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStatsFilter((f) => (f === "expired" ? "all" : "expired"))}
+                          className={`bg-white border rounded-xl px-3 py-2 text-left transition-all flex flex-col gap-0.5 ${
+                            statsFilter === "expired"
+                              ? "ring-2 ring-red-400 border-red-200"
+                              : "border-gray-200 hover:border-red-200"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                            Wygasłe
+                          </span>
+                          <span className="font-bold text-2xl text-gray-900 leading-tight">{stats.expiredMarkers}</span>
+                        </button>
+                      </div>
+                      {statsFilter !== "all" && (
+                        <button
+                          type="button"
+                          onClick={() => setStatsFilter("all")}
+                          className="mt-2 text-[11px] text-green-700 hover:underline self-start"
+                        >
+                          Wyczyść filtr
+                        </button>
                       )}
                     </div>
                   )}
-                </div>
-              </div>
-            )}
+                </section>
 
-            {/* Treasure list card — fills remaining vertical space and scrolls internally */}
-            {showTreasureList && (
-              <div
-                className="shadow-lg rounded-lg flex flex-col pointer-events-auto border overflow-hidden flex-1 min-h-0"
-                style={{
-                  background: isMobile ? "rgba(255,255,255,0.72)" : "rgba(255,255,255,0.97)",
-                  backdropFilter: "blur(12px)",
-                  WebkitBackdropFilter: "blur(12px)",
-                  borderColor: isMobile ? "rgba(255,255,255,0.35)" : "#dcfce7",
-                }}
-              >
-                <div className="p-3 border-b border-green-50/60 flex justify-between items-center bg-green-50/50">
-                  <h3 className="font-bold text-sm text-green-900 uppercase tracking-wider">
-                    Skarby ({filteredMarkers.length}{statsFilter !== "all" ? `/${markers.length}` : ""})
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    {saved && (
-                      <span className="text-xs font-bold text-green-600 animate-in fade-in duration-200">✓ Zapisano</span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-6 h-6"
-                      onClick={() => queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() })}
-                    >
-                      <RefreshCcw className="w-3 h-3 text-green-700" />
-                    </Button>
-                  </div>
-                </div>
-                <ScrollArea className="flex-1 p-2">
-                  <div className="space-y-2">
-                    {filteredMarkers.map((m) => (
-                      <MarkerRow
-                        key={m.id}
-                        m={m}
-                        onFly={flyToMarker}
-                        onDelete={handleDeleteMarker}
-                        onCopy={handleCopyCode}
-                        onPreview={setPreviewMarker}
-                        isSelected={selectedMarkerId === m.id}
-                      />
-                    ))}
-                    {filteredMarkers.length === 0 && (
-                      <div className="text-center p-4 text-gray-500 text-sm">
-                        {markers.length === 0
-                          ? "Brak skarbów. Kliknij na mapę, aby dodać nowy."
-                          : "Brak skarbów pasujących do filtra."}
+                {/* ── Module 2: ODKRYCIA (flex 1 ≈ 10%) ── */}
+                <section
+                  className={`bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden transition-[flex-grow] duration-300 ${
+                    openModules.discoveries ? "flex-[1_1_0%] basis-0" : "flex-none"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleModule("discoveries")}
+                    className="h-11 px-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Compass className="w-4 h-4 text-green-700" />
+                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
+                        Odkrycia
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-500 transition-transform ${openModules.discoveries ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {openModules.discoveries && discoveries && (
+                    <div className="px-4 pb-3 flex-1 min-h-0 flex flex-col gap-2">
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-[11px] text-gray-700 space-y-0.5">
+                        <div>
+                          Ostatni reset:{" "}
+                          <span className="font-mono font-semibold text-gray-900">
+                            {formatShortDate(discoveries.lastResetAt)}
+                          </span>
+                        </div>
+                        <div>
+                          Odkrycia od resetu:{" "}
+                          <span className="font-mono font-bold text-gray-900">{discoveries.count}</span>
+                        </div>
                       </div>
-                    )}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleResetDiscoveries}
+                          disabled={resetDiscoveries.isPending}
+                          className="h-7 px-3 text-[11px] font-semibold bg-amber-400 hover:bg-amber-500 text-amber-950 border-0"
+                        >
+                          <RotateCcw className="w-3 h-3 mr-1" />
+                          Resetuj licznik
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => setDiscoveriesOpen((v) => !v)}
+                          className="ml-auto text-[11px] text-gray-500 hover:text-gray-700 flex items-center gap-0.5"
+                        >
+                          Log ({discoveries.recent.length})
+                          <ChevronDown
+                            className={`w-3 h-3 transition-transform ${discoveriesOpen ? "rotate-180" : ""}`}
+                          />
+                        </button>
+                      </div>
+                      {discoveriesOpen && (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 font-mono text-[10px] leading-tight space-y-0.5 text-yellow-900 max-h-24 overflow-y-auto">
+                          {discoveries.recent.length === 0 ? (
+                            <div className="italic text-yellow-700">Brak aktywacji od ostatniego resetu.</div>
+                          ) : (
+                            discoveries.recent.map((r) => (
+                              <div key={`${r.code}-${r.activatedAt}`}>
+                                ({formatLogTime(r.activatedAt)}) — {r.code}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                {/* ── Module 3: SKARBY (flex 7 ≈ 70%) ── */}
+                <section
+                  className={`bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden transition-[flex-grow] duration-300 ${
+                    openModules.treasures ? "flex-[7_1_0%] basis-0" : "flex-none"
+                  }`}
+                >
+                  {/* Header uses a div (not a nested <button>) so the inner refresh
+                      action can be a real button without producing invalid HTML. */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleModule("treasures")}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleModule("treasures");
+                      }
+                    }}
+                    className="h-11 px-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors shrink-0 cursor-pointer select-none"
+                  >
+                    <span className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-green-700" />
+                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
+                        Skarby ({filteredMarkers.length}
+                        {statsFilter !== "all" ? `/${markers.length}` : ""})
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {saved && (
+                        <span className="text-[10px] font-bold text-green-600">✓</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
+                        }}
+                        className="w-6 h-6 inline-flex items-center justify-center rounded hover:bg-gray-100"
+                        title="Odśwież"
+                      >
+                        <RefreshCcw className="w-3 h-3 text-gray-500" />
+                      </button>
+                      <ChevronDown
+                        className={`w-4 h-4 text-gray-500 transition-transform ${openModules.treasures ? "rotate-180" : ""}`}
+                      />
+                    </span>
                   </div>
-                </ScrollArea>
+                  {openModules.treasures && (
+                    <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 space-y-2">
+                      {filteredMarkers.map((m) => (
+                        <MarkerRow
+                          key={m.id}
+                          m={m}
+                          onFly={flyToMarker}
+                          onDelete={handleDeleteMarker}
+                          onCopy={handleCopyCode}
+                          onPreview={setPreviewMarker}
+                          isSelected={selectedMarkerId === m.id}
+                        />
+                      ))}
+                      {filteredMarkers.length === 0 && (
+                        <div className="text-center p-4 text-gray-500 text-sm">
+                          {markers.length === 0
+                            ? "Brak skarbów. Kliknij na mapę, aby dodać nowy."
+                            : "Brak skarbów pasujących do filtra."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
               </div>
-            )}
-          </div>
+            </aside>
+          </>
         )}
 
         {/* Guest: code expiry mm:ss countdown (bottom-center, visible on map).
