@@ -714,10 +714,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
             </span>
           )}
 
-          {/* Admin name */}
-          {isAdmin && (
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden md:block">{user?.name}</span>
-          )}
+          {/* Guest: discovered treasure name */}
+          {/* (Admin name + logout live in the sidebar header — not duplicated here) */}
 
           {/* Light / dark mode toggle */}
           <Button
@@ -730,15 +728,18 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onLogout}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-          >
-            <LogOut className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Wyloguj</span>
-          </Button>
+          {/* Logout — only in topbar for guests; admins use the sidebar header button */}
+          {!isAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onLogout}
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            >
+              <LogOut className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Wyloguj</span>
+            </Button>
+          )}
         </div>
       </header>
 
