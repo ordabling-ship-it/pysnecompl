@@ -78,8 +78,17 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
         {view === "guest" ? (
           <>
             <CardHeader className="text-center space-y-2">
-              <div className="mx-auto w-16 h-16 bg-amber-100 dark:bg-amber-900/40 rounded-full flex items-center justify-center mb-4">
-                <Coins className="w-8 h-8 text-amber-500" />
+              <div className="mx-auto w-24 h-24 bg-amber-100 dark:bg-amber-900/40 rounded-full flex items-center justify-center mb-4 shadow-lg ring-2 ring-amber-200 dark:ring-amber-700">
+                <img
+                  src="/logo.png"
+                  alt="Pysne.com.pl"
+                  className="w-16 h-16 object-contain select-none"
+                  style={{
+                    filter:
+                      "brightness(0) invert(1) sepia(1) saturate(5) hue-rotate(5deg) drop-shadow(0 0 8px rgba(245,158,11,0.6))",
+                  }}
+                  draggable={false}
+                />
               </div>
               <CardTitle className="text-3xl font-bold text-green-950 dark:text-green-300">Pysne.com.pl</CardTitle>
               <CardDescription className="text-green-800 dark:text-green-400 text-lg">Wpisz kod, aby odkryć skarb</CardDescription>
