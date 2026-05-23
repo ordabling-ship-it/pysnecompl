@@ -246,16 +246,16 @@ function MarkerRow({
       ref={rowRef}
       className={`p-3 rounded-md text-sm transition-all cursor-pointer ${
         isSelected
-          ? "border-2 border-green-600 shadow-md bg-white"
+          ? "border-2 border-green-600 shadow-md bg-white dark:bg-gray-700"
           : isExpired
-            ? "border bg-gray-50 border-gray-100 opacity-60"
-            : "border bg-white hover:border-green-300 hover:shadow-sm"
+            ? "border bg-gray-50 dark:bg-gray-700/50 border-gray-100 dark:border-gray-600 opacity-60"
+            : "border bg-white dark:bg-gray-700 dark:border-gray-600 hover:border-green-300 dark:hover:border-green-600 hover:shadow-sm"
       }`}
       onClick={() => onFly(m.lat, m.lng, m.id)}
     >
       {/* Title row */}
       <div className="flex justify-between items-start mb-1 gap-1">
-        <span className={`font-semibold flex-1 min-w-0 truncate ${isExpired ? "text-gray-500" : "text-green-900"}`}>
+        <span className={`font-semibold flex-1 min-w-0 truncate ${isExpired ? "text-gray-500 dark:text-gray-400" : "text-green-900 dark:text-green-400"}`}>
           {m.title}
         </span>
         <div className="flex items-center gap-0.5 shrink-0">
@@ -288,7 +288,7 @@ function MarkerRow({
       <div className="flex items-center gap-2 mt-2">
         <code
           className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-widest ${
-            isExpired ? "bg-gray-200 text-gray-400 line-through" : "bg-amber-100 text-amber-800"
+            isExpired ? "bg-gray-200 dark:bg-gray-600 text-gray-400 dark:text-gray-500 line-through" : "bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300"
           }`}
         >
           {m.code}
@@ -307,14 +307,14 @@ function MarkerRow({
 
         {/* Per spec: replace the legacy "X odkryć" with the same activation-date
             field shown below — same font, same data source. Shows "—" until activated. */}
-        <span className="text-[11px] text-gray-400 ml-auto font-mono">
+        <span className="text-[11px] text-gray-400 dark:text-gray-500 ml-auto font-mono">
           {m.activatedAt ? formatActivationDate(m.activatedAt) : "—"}
         </span>
       </div>
 
       {/* Activation date field — explicit label per spec.
           "Aktywacja" is the moment the FIRST guest entered the code. */}
-      <div className="text-[11px] text-gray-500 mt-1.5 font-mono">
+      <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 font-mono">
         Aktywacja: {m.activatedAt ? formatActivationDate(m.activatedAt) : "—"}
       </div>
 
@@ -323,7 +323,7 @@ function MarkerRow({
           we show "Nieaktywny (60:00)" in grey so the admin knows the code is set
           to 60min but hasn't begun counting down. */}
       <div className={`flex items-center gap-1 mt-1 text-xs font-mono font-semibold ${
-        notStarted ? "text-gray-500" : isExpired ? "text-gray-400" : "text-red-500"
+        notStarted ? "text-gray-500 dark:text-gray-400" : isExpired ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400"
       }`}>
         <Clock className="w-3 h-3" />
         {notStarted
@@ -692,7 +692,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     <div className="flex flex-col h-[100dvh] w-full relative">
 
       {/* ── Topbar ── */}
-      <header className="h-16 flex items-center justify-between px-3 sm:px-4 bg-white border-b shadow-sm z-[1000] relative shrink-0 gap-2">
+      <header className="h-16 flex items-center justify-between px-3 sm:px-4 bg-white dark:bg-gray-900 border-b dark:border-gray-700 shadow-sm z-[1000] relative shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-2xl">🪙</span>
           <h1 className="font-bold text-lg hidden sm:block text-green-950 dark:text-green-100">Pysne.com.pl</h1>
@@ -709,14 +709,14 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
           {/* Guest: show discovered treasure name */}
           {guestData && (
-            <span className="text-sm font-medium text-gray-600 hidden md:block truncate max-w-[180px]">
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden md:block truncate max-w-[180px]">
               🪙 {guestData.markerTitle}
             </span>
           )}
 
           {/* Admin name */}
           {isAdmin && (
-            <span className="text-sm font-medium text-gray-600 hidden md:block">{user?.name}</span>
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden md:block">{user?.name}</span>
           )}
 
           {/* Light / dark mode toggle */}
@@ -725,7 +725,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
             size="icon"
             onClick={onToggleTheme}
             title={theme === "dark" ? "Tryb jasny" : "Tryb ciemny"}
-            className="w-8 h-8 text-gray-500 hover:text-amber-600 hover:bg-amber-50"
+            className="w-8 h-8 text-gray-500 dark:text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-gray-800"
           >
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </Button>
@@ -750,7 +750,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         {isAdmin && (
           <form
             onSubmit={handleAddressSearch}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 backdrop-blur shadow-lg rounded-lg border border-green-100 p-2 flex items-center gap-2 w-[min(92vw,360px)]"
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 dark:bg-gray-800/95 backdrop-blur shadow-lg rounded-lg border border-green-100 dark:border-gray-600 p-2 flex items-center gap-2 w-[min(92vw,360px)]"
           >
             <Input
               placeholder="Szukaj ulicy w Szczecinie..."
@@ -777,7 +777,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 type="button"
                 onClick={() => setSidebarCollapsed((v) => !v)}
                 aria-label={sidebarCollapsed ? "Otwórz panel" : "Zamknij panel"}
-                className="absolute top-3 right-3 z-[1100] w-11 h-11 bg-white rounded-xl shadow-lg border border-gray-200 flex items-center justify-center active:scale-95 transition-transform"
+                className="absolute top-3 right-3 z-[1100] w-11 h-11 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center active:scale-95 transition-transform"
               >
                 {sidebarCollapsed ? (
                   <Menu className="w-5 h-5 text-green-800" />
@@ -800,7 +800,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
             <aside
               className={`
                 absolute right-0 top-0 bottom-0 z-[1050]
-                flex flex-col bg-[#fafbfc] border-l border-gray-200 shadow-xl
+                flex flex-col bg-[#fafbfc] dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-xl
                 overflow-y-auto
                 transition-transform duration-300 ease-in-out
                 ${isMobile
@@ -810,10 +810,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
               style={{ width: isMobile ? "min(86vw, 340px)" : "320px" }}
             >
               {/* ── Header ── */}
-              <div className="px-4 h-12 flex items-center justify-between border-b border-gray-200 bg-white shrink-0">
+              <div className="px-4 h-12 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Shield className="w-4 h-4 text-green-700 shrink-0" />
-                  <span className="text-sm font-semibold text-gray-800 truncate">
+                  <Shield className="w-4 h-4 text-green-700 dark:text-green-400 shrink-0" />
+                  <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
                     {user?.name ?? "admin"}
                   </span>
                 </div>
@@ -831,28 +831,28 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
               <div className="flex flex-col gap-4 p-3">
 
                 {/* ── Combined: STATYSTYKI & ODKRYCIA (collapsible) ── */}
-                <section className="bg-white border border-gray-200 rounded-xl shadow-sm">
+                <section className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
                   {/* Section title — click anywhere on header to collapse */}
                   <button
                     type="button"
                     onClick={toggleStats}
-                    className="w-full px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2 hover:bg-gray-50 rounded-t-xl transition-colors"
+                    className="w-full px-4 pt-3 pb-2 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-t-xl transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-green-700" />
-                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
+                      <BarChart3 className="w-4 h-4 text-green-700 dark:text-green-400" />
+                      <span className="text-xs font-bold tracking-wider text-gray-800 dark:text-gray-200 uppercase">
                         Statystyki &amp; Odkrycia
                       </span>
                       {/* Compact summary visible when collapsed */}
                       {!statsOpen && stats && discoveries && (
-                        <span className="text-[10px] text-gray-400 font-normal ml-1">
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-normal ml-1">
                           {stats.activeMarkers}A / {stats.expiredMarkers}W · {discoveries.count} odkryć
                         </span>
                       )}
                     </div>
                     {statsOpen
-                      ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                      : <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
+                      : <ChevronDown className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
                     }
                   </button>
 
@@ -864,34 +864,34 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                           <button
                             type="button"
                             onClick={() => setStatsFilter((f) => (f === "active" ? "all" : "active"))}
-                            className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
+                            className={`bg-white dark:bg-gray-700 border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
                               statsFilter === "active"
-                                ? "ring-2 ring-green-500 border-green-300"
-                                : "border-gray-200 hover:border-green-300"
+                                ? "ring-2 ring-green-500 border-green-300 dark:border-green-600"
+                                : "border-gray-200 dark:border-gray-600 hover:border-green-300"
                             }`}
                           >
-                            <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                            <span className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
                               <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
                               Aktywne
                             </span>
-                            <span className="font-bold text-2xl text-gray-900 leading-tight">
+                            <span className="font-bold text-2xl text-gray-900 dark:text-gray-100 leading-tight">
                               {stats.activeMarkers}
                             </span>
                           </button>
                           <button
                             type="button"
                             onClick={() => setStatsFilter((f) => (f === "expired" ? "all" : "expired"))}
-                            className={`bg-white border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
+                            className={`bg-white dark:bg-gray-700 border rounded-xl px-3 py-2.5 text-left transition-all flex flex-col gap-0.5 ${
                               statsFilter === "expired"
-                                ? "ring-2 ring-red-400 border-red-200"
-                                : "border-gray-200 hover:border-red-200"
+                                ? "ring-2 ring-red-400 border-red-200 dark:border-red-700"
+                                : "border-gray-200 dark:border-gray-600 hover:border-red-200"
                             }`}
                           >
-                            <span className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                            <span className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
                               Wygasłe
                             </span>
-                            <span className="font-bold text-2xl text-gray-900 leading-tight">
+                            <span className="font-bold text-2xl text-gray-900 dark:text-gray-100 leading-tight">
                               {stats.expiredMarkers}
                             </span>
                           </button>
@@ -901,32 +901,32 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                         <button
                           type="button"
                           onClick={() => setStatsFilter("all")}
-                          className="text-[11px] text-green-700 hover:underline self-start -mt-1"
+                          className="text-[11px] text-green-700 dark:text-green-400 hover:underline self-start -mt-1"
                         >
                           Wyczyść filtr
                         </button>
                       )}
 
                       {/* Divider */}
-                      <div className="border-t border-gray-100" />
+                      <div className="border-t border-gray-100 dark:border-gray-700" />
 
                       {/* Odkrycia data */}
                       {discoveries && (
                         <div className="flex flex-col gap-2">
                           <div className="flex items-center gap-2">
-                            <Compass className="w-3.5 h-3.5 text-green-700 shrink-0" />
-                            <span className="text-xs font-bold tracking-wider text-gray-700 uppercase">Odkrycia</span>
+                            <Compass className="w-3.5 h-3.5 text-green-700 dark:text-green-400 shrink-0" />
+                            <span className="text-xs font-bold tracking-wider text-gray-700 dark:text-gray-300 uppercase">Odkrycia</span>
                           </div>
                           <div className="grid grid-cols-2 gap-2 text-[12px]">
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                              <div className="text-gray-500 text-[10px] mb-0.5">Ostatni reset</div>
-                              <div className="font-mono font-semibold text-gray-900">
+                            <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
+                              <div className="text-gray-500 dark:text-gray-400 text-[10px] mb-0.5">Ostatni reset</div>
+                              <div className="font-mono font-semibold text-gray-900 dark:text-gray-100">
                                 {formatShortDate(discoveries.lastResetAt)}
                               </div>
                             </div>
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                              <div className="text-gray-500 text-[10px] mb-0.5">Od resetu</div>
-                              <div className="font-mono font-bold text-2xl text-gray-900 leading-tight">
+                            <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
+                              <div className="text-gray-500 dark:text-gray-400 text-[10px] mb-0.5">Od resetu</div>
+                              <div className="font-mono font-bold text-2xl text-gray-900 dark:text-gray-100 leading-tight">
                                 {discoveries.count}
                               </div>
                             </div>
@@ -945,21 +945,21 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
                           {/* Recent activations log — code + time + street name */}
                           <div>
-                            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                            <div className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
                               Ostatnie aktywacje ({discoveries.recent.length})
                             </div>
                             {discoveries.recent.length === 0 ? (
-                              <div className="text-[11px] italic text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                              <div className="text-[11px] italic text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
                                 Brak aktywacji od ostatniego resetu.
                               </div>
                             ) : (
-                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 font-mono text-[10px] leading-relaxed space-y-0.5 text-yellow-900">
+                              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900 rounded-lg px-3 py-2 font-mono text-[10px] leading-relaxed space-y-0.5 text-yellow-900 dark:text-yellow-200">
                                 {discoveries.recent.map((r) => (
                                   <div key={`${r.code}-${r.activatedAt}`}>
-                                    <span className="text-yellow-600">({formatLogTime(r.activatedAt)})</span>
+                                    <span className="text-yellow-600 dark:text-yellow-400">({formatLogTime(r.activatedAt)})</span>
                                     {" — "}{r.code}
                                     {" — "}
-                                    <span className="text-yellow-700 italic">
+                                    <span className="text-yellow-700 dark:text-yellow-300 italic">
                                       {streetLabels[r.code] ?? "…"}
                                     </span>
                                   </div>
@@ -974,26 +974,26 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 </section>
 
                 {/* ── SKARBY list ── */}
-                <section className="bg-white border border-gray-200 rounded-xl shadow-sm">
-                  <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+                <section className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                  <div className="px-4 pt-3 pb-2 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-green-700" />
-                      <span className="text-xs font-bold tracking-wider text-gray-800 uppercase">
+                      <MapPin className="w-4 h-4 text-green-700 dark:text-green-400" />
+                      <span className="text-xs font-bold tracking-wider text-gray-800 dark:text-gray-200 uppercase">
                         Skarby ({filteredMarkers.length}
                         {statsFilter !== "all" ? `/${markers.length}` : ""})
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
                       {saved && (
-                        <span className="text-[10px] font-bold text-green-600">✓ Zapisano</span>
+                        <span className="text-[10px] font-bold text-green-600 dark:text-green-400">✓ Zapisano</span>
                       )}
                       <button
                         type="button"
                         onClick={() => queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() })}
-                        className="w-7 h-7 inline-flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                         title="Odśwież"
                       >
-                        <RefreshCcw className="w-3.5 h-3.5 text-gray-500" />
+                        <RefreshCcw className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
                       </button>
                     </div>
                   </div>
@@ -1011,7 +1011,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       />
                     ))}
                     {filteredMarkers.length === 0 && (
-                      <div className="text-center p-4 text-gray-500 text-sm">
+                      <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
                         {markers.length === 0
                           ? "Brak skarbów. Kliknij na mapę, aby dodać nowy."
                           : "Brak skarbów pasujących do filtra."}
@@ -1028,7 +1028,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         {/* ── Admin login welcome notification (bottom-center, 3 s auto-dismiss) ── */}
         {loginMsg && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[2000] pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="px-5 py-2.5 rounded-2xl bg-white/90 backdrop-blur shadow-lg border border-green-100 text-[13px] font-medium text-green-900 whitespace-nowrap">
+            <div className="px-5 py-2.5 rounded-2xl bg-white/90 dark:bg-gray-800/90 backdrop-blur shadow-lg border border-green-100 dark:border-green-900 text-[13px] font-medium text-green-900 dark:text-green-300 whitespace-nowrap">
               {loginMsg}
             </div>
           </div>
@@ -1046,8 +1046,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
               {/* Minimalist guest timer: just a clock icon + mm:ss. No "Pozostało:" label. */}
               <div className={`px-4 py-2 rounded-full text-sm font-mono font-bold shadow-lg flex items-center gap-2 border ${
                 codeExpired
-                  ? "bg-gray-100 text-gray-500 border-gray-200"
-                  : "bg-white/90 text-red-600 border-red-200"
+                  ? "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600"
+                  : "bg-white/90 dark:bg-gray-800/90 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
               }`}>
                 <Clock className="w-4 h-4" />
                 {codeExpired ? "00:00" : formatCodeTimer(codeRemaining)}

@@ -1,0 +1,79 @@
+Here is a polished, production-style Replit AI prompt in English:
+
+⸻
+
+🔧 REPLIT AI PROMPT
+
+You are working on an existing web application. Apply the following improvements carefully without breaking existing functionality or refactoring the entire system.
+
+⸻
+
+1. 🔐 Remove exposed admin login credentials (security fix)
+
+In the administrator login panel, there are visible credentials displayed under the username and password fields.
+
+❌ Issue:
+
+* Admin login details are exposed in the UI (under input fields)
+* This creates a serious security risk and exposes sensitive access information
+
+✅ Fix:
+
+* Completely remove all visible login credentials from the UI
+* Ensure no username or password hints are displayed anywhere in the admin login panel
+* Verify that admin credentials are never exposed on the frontend
+* Ensure authentication remains secure and not accessible to third parties
+* Audit the login page for any additional security leaks or unintended exposure of sensitive data
+
+⸻
+
+2. 🌑 Full Dark Mode implementation (system-wide)
+
+Create a complete dark mode version for the entire application:
+
+Requirements:
+
+* The whole UI must support a full dark theme (like iOS dark mode aesthetic)
+* Use deep dark tones (not just inverted colors), e.g.:
+    * dark backgrounds (#0f0f0f, #121212, #1a1a1a)
+    * soft contrast text (light gray/white)
+* Ensure all components are compatible:
+    * login page
+    * admin panel
+    * sidebar
+    * modals
+    * buttons
+    * forms
+
+⸻
+
+3. 🔁 Manual theme toggle (user + admin)
+
+Add a single toggle button that allows both users and admins to switch between light and dark mode manually.
+
+Requirements:
+
+* One global toggle button (theme switch)
+* Must be accessible to both users and admin panel
+* Button should be:
+    * non-intrusive
+    * placed in a fixed position (e.g. top-right corner or bottom corner)
+    * not overlapping other UI elements or modal windows
+* Save user preference using localStorage (or existing state system)
+* Theme should persist after refresh
+
+⸻
+
+⚙️ Constraints
+
+* Do not break existing authentication or UI structure
+* Do not expose any sensitive data on frontend
+* Do not refactor the whole project — apply minimal, targeted changes
+* Keep the UI consistent and production-ready
+
+⸻
+
+If you want, I can also upgrade this into:
+
+* a Tailwind dark mode config (ready to paste)
+* or a React theme provider implementation (best practice version)

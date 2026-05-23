@@ -128,7 +128,14 @@ function MainApp() {
   }
 
   if (!user && !guestData) {
-    return <AuthScreen onLoginAdmin={handleAdminLogin} onLoginGuest={handleGuestLogin} />;
+    return (
+      <AuthScreen
+        onLoginAdmin={handleAdminLogin}
+        onLoginGuest={handleGuestLogin}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+      />
+    );
   }
 
   return (
