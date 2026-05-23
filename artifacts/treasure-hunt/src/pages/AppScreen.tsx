@@ -695,7 +695,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       <header className="h-16 flex items-center justify-between px-3 sm:px-4 bg-white border-b shadow-sm z-[1000] relative shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-2xl">🪙</span>
-          <h1 className="font-bold text-lg hidden sm:block text-green-950 dark:text-green-100">Delicious</h1>
+          <h1 className="font-bold text-lg hidden sm:block text-green-950 dark:text-green-100">Pysne.com.pl</h1>
           <Badge
             variant="outline"
             className={isAdmin ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-blue-100 text-blue-800 border-blue-200"}
