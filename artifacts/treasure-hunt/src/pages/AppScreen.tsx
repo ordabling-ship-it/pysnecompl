@@ -149,17 +149,23 @@ function formatShortDate(iso: string): string {
 // Guest Leaflet popup HTML (static — the single
 // countdown lives in the bottom-center chip).
 // ─────────────────────────────────────────────
-function buildGuestPopupHtml(g: GuestData): string {
+function buildGuestPopupHtml(g: GuestData, isDark = false): string {
+  const bg        = isDark ? "#1f2937" : "#ffffff";
+  const titleClr  = isDark ? "#fbbf24" : "#d97706";
+  const textClr   = isDark ? "#d1d5db" : "#374151";
+  const badgeBg   = isDark ? "#374151" : "#fef3c7";
+  const badgeClr  = isDark ? "#fde68a" : "#92400e";
+
   const imageBlock = g.imageUrl
     ? `<img src="${g.imageUrl}" style="width:100%;height:96px;object-fit:cover;border-radius:4px;margin-bottom:8px"/>`
     : "";
 
   return `
-    <div style="padding:8px;min-width:230px">
+    <div style="padding:8px;min-width:230px;background:${bg};border-radius:4px">
       ${imageBlock}
-      <h3 style="font-weight:700;font-size:15px;color:#d97706">${g.markerTitle}</h3>
-      <p style="font-size:12px;color:#374151;margin-top:4px;font-style:italic">💡 ${g.markerDescription}</p>
-      <span style="display:inline-block;margin-top:8px;padding:2px 8px;background:#fef3c7;color:#92400e;border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase">Moneta znaleziona!</span>
+      <h3 style="font-weight:700;font-size:15px;color:${titleClr}">${g.markerTitle}</h3>
+      <p style="font-size:12px;color:${textClr};margin-top:4px;font-style:italic">💡 ${g.markerDescription}</p>
+      <span style="display:inline-block;margin-top:8px;padding:2px 8px;background:${badgeBg};color:${badgeClr};border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase">Moneta znaleziona!</span>
       <button onclick="window.__thNavigate(${g.lat}, ${g.lng})"
         style="margin-top:10px;width:100%;background:#2563eb;color:#fff;font-size:13px;font-weight:600;padding:7px 10px;border:none;border-radius:6px;cursor:pointer">
         🧭 Nawiguj
@@ -284,8 +290,8 @@ function MarkerRow({
         </div>
       </div>
 
-      {/* Code + copy button row */}
-      <div className="flex items-center gap-2 mt-2">
+      {/* Single row: code | copy | timer | date */}
+      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
         <code
           className={`px-2 py-0.5 rounded text-xs font-mono font-bold tracking-widest ${
             isExpired ? "bg-gray-200 dark:bg-gray-600 text-gray-400 dark:text-gray-500 line-through" : "bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300"
@@ -294,7 +300,6 @@ function MarkerRow({
           {m.code}
         </code>
 
-        {/* Copy code button */}
         <Button
           variant="ghost"
           size="icon"
@@ -305,32 +310,18 @@ function MarkerRow({
           <Copy className="w-3.5 h-3.5" />
         </Button>
 
-        {/* Per spec: replace the legacy "X odkryć" with the same activation-date
-            field shown below — same font, same data source. Shows "—" until activated. */}
+        {/* Timer chip */}
+        <span className={`flex items-center gap-1 text-xs font-mono font-semibold ${
+          notStarted ? "text-gray-500 dark:text-gray-400" : isExpired ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400"
+        }`}>
+          <Clock className="w-3 h-3" />
+          {notStarted ? "Nieaktywny (60:00)" : isExpired ? "Wygasły" : formatCodeTimer(remaining)}
+        </span>
+
+        {/* Activation date — right-aligned */}
         <span className="text-[11px] text-gray-400 dark:text-gray-500 ml-auto font-mono">
           {m.activatedAt ? formatActivationDate(m.activatedAt) : "—"}
         </span>
-      </div>
-
-      {/* Activation date field — explicit label per spec.
-          "Aktywacja" is the moment the FIRST guest entered the code. */}
-      <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5 font-mono">
-        Aktywacja: {m.activatedAt ? formatActivationDate(m.activatedAt) : "—"}
-      </div>
-
-      {/* Real-time mm:ss expiry countdown — placed BELOW the copy button as per spec.
-          When the timer has not been started yet (no guest has entered the code),
-          we show "Nieaktywny (60:00)" in grey so the admin knows the code is set
-          to 60min but hasn't begun counting down. */}
-      <div className={`flex items-center gap-1 mt-1 text-xs font-mono font-semibold ${
-        notStarted ? "text-gray-500 dark:text-gray-400" : isExpired ? "text-gray-400 dark:text-gray-500" : "text-red-500 dark:text-red-400"
-      }`}>
-        <Clock className="w-3 h-3" />
-        {notStarted
-          ? "Nieaktywny (60:00)"
-          : isExpired
-            ? "Wygasły"
-            : `Pozostało: ${formatCodeTimer(remaining)}`}
       </div>
     </div>
   );
@@ -342,6 +333,8 @@ function MarkerRow({
 export default function AppScreen({ user, guestData, onLogout, theme, onToggleTheme, loginMsg, onLoginMsgDismiss }: AppScreenProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const themeRef = useRef(theme);
   const markersRef = useRef<Record<number, L.Marker>>({});
   const searchMarkerRef = useRef<L.Marker | null>(null);
 
@@ -430,9 +423,13 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     setTimeout(() => setSaved(false), 2000);
   };
 
-  // Open Google Maps directions
-  const openInGoogleMaps = (lat: number, lng: number) => {
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, "_blank", "noopener");
+  // Open the device's default navigation app (Apple Maps on iOS, default on Android)
+  const openNavigation = (lat: number, lng: number) => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const url = isIOS
+      ? `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`
+      : `geo:${lat},${lng}?q=${lat},${lng}`;
+    window.open(url, "_blank", "noopener");
   };
 
   // ── Copy code helper: shows toast on success ──
@@ -445,13 +442,13 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     });
   }, [toast]);
 
-  // ── Map init ──
+  // ── Keep themeRef in sync so map effects can read the latest theme ──
+  useEffect(() => { themeRef.current = theme; }, [theme]);
+
+  // ── Map init (no tile layer here — the tile layer effect below owns it) ──
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
     mapRef.current = L.map(mapContainer.current).setView([53.4285, 14.5528], 14);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(mapRef.current);
 
     if (isAdmin) {
       mapRef.current.on("click", (e) => {
@@ -459,12 +456,35 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         setIsSheetOpen(true);
       });
     }
-    return () => { mapRef.current?.remove(); mapRef.current = null; };
+    return () => {
+      tileLayerRef.current = null;
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
   }, [isAdmin]);
+
+  // ── Tile layer: swap between light OSM and dark CartoDB whenever theme or
+  //    isAdmin changes. isAdmin is included so the layer is (re-)added after
+  //    the map is recreated when the user switches role. ──
+  useEffect(() => {
+    if (!mapRef.current) return;
+    tileLayerRef.current?.remove();
+    const dark = theme === "dark";
+    tileLayerRef.current = L.tileLayer(
+      dark
+        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {
+        attribution: dark
+          ? "&copy; <a href='https://www.openstreetmap.org/copyright'>OSM</a> &copy; <a href='https://carto.com/attributions'>CARTO</a>"
+          : "&copy; OpenStreetMap contributors",
+      }
+    ).addTo(mapRef.current);
+  }, [theme, isAdmin]);
 
   // ── Wire navigate helper used by Leaflet popup HTML ──
   useEffect(() => {
-    (window as unknown as { __thNavigate?: (lat: number, lng: number) => void }).__thNavigate = openInGoogleMaps;
+    (window as unknown as { __thNavigate?: (lat: number, lng: number) => void }).__thNavigate = openNavigation;
     return () => { delete (window as unknown as { __thNavigate?: (lat: number, lng: number) => void }).__thNavigate; };
   }, []);
 
@@ -478,8 +498,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     // Snapshot identity values into local consts so the cleanup closure doesn't
     // depend on the guestData object identity.
     const { markerId, lat, lng } = guestData;
-    const popupHtml = buildGuestPopupHtml(guestData);
-    const marker = L.marker([lat, lng], { icon: createIcon(goldCoinHtml) })
+    const popupHtml = buildGuestPopupHtml(guestData, themeRef.current === "dark");
+    const marker = L.marker([lat, lng], { icon: createIcon(redPinHtml) })
       .addTo(mapRef.current)
       .bindPopup(popupHtml);
     markersRef.current[markerId] = marker;
@@ -494,13 +514,23 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guestData?.markerId]);
 
-  // ── Admin map placement (only fires for admin and when the filtered list
-  //    actually changes). ──
+  // ── Update guest popup colours when theme changes (without rebuilding the marker) ──
+  useEffect(() => {
+    if (!guestData) return;
+    const marker = markersRef.current[guestData.markerId];
+    marker?.setPopupContent(buildGuestPopupHtml(guestData, theme === "dark"));
+  }, [theme, guestData]);
+
+  // ── Admin map placement (fires when admin markers list or theme changes). ──
   useEffect(() => {
     if (!mapRef.current || !isAdmin) return;
     // Tear down any previous admin pins before re-rendering.
     Object.values(markersRef.current).forEach((m) => m.remove());
     markersRef.current = {};
+    const dark = theme === "dark";
+    const popupBg    = dark ? "#1f2937" : "#ffffff";
+    const descClr    = dark ? "#9ca3af" : "#6b7280";
+    const codePanBg  = dark ? "#374151" : "#f3f4f6";
     filteredMarkers.forEach((m) => {
       // Three pin colours:
       //   - grey   → expired (timer started AND past)
@@ -509,21 +539,23 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       const expired = m.expiresAt !== null && new Date(m.expiresAt) < new Date();
       const counting = m.expiresAt !== null && !expired;
       const pinHtml = expired ? expiredPinHtml : counting ? redPinHtml : adminPinHtml;
+      const titleClr = expired ? (dark ? "#6b7280" : "#9ca3af") : (dark ? "#6ee7b7" : "#166534");
+      const codeClr  = expired ? (dark ? "#6b7280" : "#9ca3af") : (dark ? "#6ee7b7" : "#15803d");
       const imgHtml = m.imageUrl
         ? `<img src="${m.imageUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:6px"/>`
-        : `<div style="width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:11px;font-style:italic;margin-bottom:6px">Brak zdjęcia</div>`;
+        : `<div style="width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:${descClr};font-size:11px;font-style:italic;margin-bottom:6px">Brak zdjęcia</div>`;
       const marker = L.marker([m.lat, m.lng], {
         icon: createIcon(pinHtml),
         opacity: expired ? 0.55 : 1,
       })
         .addTo(mapRef.current!)
         .bindPopup(`
-          <div style="padding:8px;min-width:200px">
+          <div style="padding:8px;min-width:200px;background:${popupBg};border-radius:4px">
             ${imgHtml}
-            <h3 style="font-weight:700;font-size:14px;${expired ? "color:#9ca3af" : ""}">${m.title}${expired ? " (Wygasły)" : ""}</h3>
-            <p style="font-size:12px;color:#6b7280;margin-top:4px">${m.description}</p>
-            <div style="margin-top:8px;background:#f3f4f6;padding:6px;border-radius:4px;text-align:center">
-              <code style="font-family:monospace;font-weight:700;letter-spacing:0.1em;${expired ? "color:#9ca3af;text-decoration:line-through" : "color:#15803d"}">${m.code}</code>
+            <h3 style="font-weight:700;font-size:14px;color:${titleClr}">${m.title}${expired ? " (Wygasły)" : ""}</h3>
+            <p style="font-size:12px;color:${descClr};margin-top:4px">${m.description}</p>
+            <div style="margin-top:8px;background:${codePanBg};padding:6px;border-radius:4px;text-align:center">
+              <code style="font-family:monospace;font-weight:700;letter-spacing:0.1em;color:${codeClr};${expired ? "text-decoration:line-through" : ""}">${m.code}</code>
             </div>
           </div>
         `);
@@ -531,7 +563,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       marker.on("click", () => setSelectedMarkerId(m.id));
       markersRef.current[m.id] = marker;
     });
-  }, [isAdmin, filteredMarkers]);
+  }, [isAdmin, filteredMarkers, theme]);
 
   const handleCreateMarker = (e: React.FormEvent) => {
     e.preventDefault();
