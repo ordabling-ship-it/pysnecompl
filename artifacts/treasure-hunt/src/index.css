@@ -312,9 +312,8 @@
    Dark:  bright amber-400 gold with a warm glow against the dark card. */
 .logo-themed {
   filter:
-    brightness(0) invert(1) sepia(1) saturate(4) hue-rotate(5deg)
-    brightness(0.72)
-    drop-shadow(0 0 6px rgba(146, 64, 14, 0.45));
+    brightness(0)
+    drop-shadow(0 1px 4px rgba(0, 0, 0, 0.25));
 }
 .dark .logo-themed {
   filter:
