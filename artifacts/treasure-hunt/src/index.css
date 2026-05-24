@@ -307,6 +307,14 @@
   }
 }
 
+/* ── Dark mode map: invert OSM tiles so roads are light on dark bg.
+   hue-rotate(180deg) cancels out for blue water and green parks so
+   natural colours are preserved. Only the tile pane is filtered —
+   markers, popups, and controls are unaffected. ── */
+.dark .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}
+
 /* ── Dark mode Leaflet overrides ── */
 .dark .leaflet-popup-content-wrapper {
   background: #1f2937 !important;

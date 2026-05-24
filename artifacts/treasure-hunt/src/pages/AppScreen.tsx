@@ -469,16 +469,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   useEffect(() => {
     if (!mapRef.current) return;
     tileLayerRef.current?.remove();
-    const dark = theme === "dark";
     tileLayerRef.current = L.tileLayer(
-      dark
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      {
-        attribution: dark
-          ? "&copy; <a href='https://www.openstreetmap.org/copyright'>OSM</a> &copy; <a href='https://carto.com/attributions'>CARTO</a>"
-          : "&copy; OpenStreetMap contributors",
-      }
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { attribution: "&copy; OpenStreetMap contributors" }
     ).addTo(mapRef.current);
   }, [theme, isAdmin]);
 
