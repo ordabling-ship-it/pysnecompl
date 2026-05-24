@@ -307,6 +307,22 @@
   }
 }
 
+/* ── Auth screen logo — adapts to site palette in light and dark mode ──
+   Light: deep amber-800 matching the amber circle and button accents.
+   Dark:  bright amber-400 gold with a warm glow against the dark card. */
+.logo-themed {
+  filter:
+    brightness(0) invert(1) sepia(1) saturate(4) hue-rotate(5deg)
+    brightness(0.72)
+    drop-shadow(0 0 6px rgba(146, 64, 14, 0.45));
+}
+.dark .logo-themed {
+  filter:
+    brightness(0) invert(1) sepia(1) saturate(4) hue-rotate(5deg)
+    brightness(1.25)
+    drop-shadow(0 0 14px rgba(251, 191, 36, 0.6));
+}
+
 /* ── Dark mode map: invert OSM tiles so roads are light on dark bg.
    hue-rotate(180deg) cancels out for blue water and green parks so
    natural colours are preserved. Only the tile pane is filtered —

@@ -82,11 +82,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                 <img
                   src="/logo.png"
                   alt="Pysne.com.pl"
-                  className="w-16 h-16 object-contain select-none"
-                  style={{
-                    filter:
-                      "brightness(0) invert(1) sepia(1) saturate(5) hue-rotate(5deg) drop-shadow(0 0 8px rgba(245,158,11,0.6))",
-                  }}
+                  className="w-16 h-16 object-contain select-none logo-themed"
                   draggable={false}
                 />
               </div>
