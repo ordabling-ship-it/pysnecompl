@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: pysnecompl
+    runtime: node
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run build:production
+    startCommand: pnpm run start:production
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
