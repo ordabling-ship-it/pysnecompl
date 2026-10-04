@@ -44,9 +44,12 @@ function getAutoTheme(): "light" | "dark" {
 }
 
 function MainApp() {
-  const [user, setUser] = useState<{ id: number; name: string; role: string } | null>(null);
+  const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
+  const [user, setUser] = useState<{ id: number; name: string; role: string } | null>(
+    layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin" } : null,
+  );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
-  const [hydrating, setHydrating] = useState(true);
+  const [hydrating, setHydrating] = useState(!layoutPreview);
 
   // Welcome notification shown after admin login at bottom-center of screen.
   const [loginMsg, setLoginMsg] = useState<string | null>(null);
@@ -86,6 +89,7 @@ function MainApp() {
 
   // Restore the signed admin cookie first, then fall back to the saved guest code.
   useEffect(() => {
+    if (layoutPreview) return;
     let mounted = true;
     const restoreSession = async () => {
       try {
@@ -119,7 +123,7 @@ function MainApp() {
       if (mounted) setHydrating(false);
     });
     return () => { mounted = false; };
-  }, []);
+  }, [layoutPreview]);
 
   const handleAdminLogin = (data: { id: number; name: string; role: string }) => {
     setUser(data);
@@ -175,6 +179,7 @@ function MainApp() {
       onToggleTheme={handleToggleTheme}
       loginMsg={loginMsg}
       onLoginMsgDismiss={() => setLoginMsg(null)}
+      layoutPreview={layoutPreview}
     />
   );
 }

@@ -102,6 +102,9 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                       maxLength={6}
                       disabled={guestLogin.isPending}
                     />
+                    <p className="px-1 text-center text-xs leading-relaxed text-green-800/80 dark:text-green-300/80">
+                      Wpisz kod znaleziony przy skarbie, aby odkryć wskazówkę i rozpocząć zabawę.
+                    </p>
                   </div>
                 </div>
               </CardContent>

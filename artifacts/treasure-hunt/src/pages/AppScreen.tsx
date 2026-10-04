@@ -12,6 +12,7 @@ import {
   getGetStatsQueryKey,
   getGetDiscoveriesQueryKey,
 } from "@workspace/api-client-react";
+import type { Discoveries, Marker, Stats } from "@workspace/api-client-react";
 import type { GuestData } from "@/App";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,7 @@ import {
   LogOut, Search, Shield, User, Image as ImageIcon, Trash2, RefreshCcw,
   BarChart3, List, Loader2, Copy, Eye, X, ChevronRight, ChevronLeft, Clock,
   Check, ChevronDown, RotateCcw, Menu, Compass, MapPin, Sun, Moon, ChevronUp,
+  Plus,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -213,6 +215,7 @@ type AppScreenProps = {
   onToggleTheme: () => void;
   loginMsg: string | null;
   onLoginMsgDismiss: () => void;
+  layoutPreview?: boolean;
 };
 
 type MarkerItem = {
@@ -358,7 +361,7 @@ function MarkerRow({
 // ─────────────────────────────────────────────
 // Main AppScreen component
 // ─────────────────────────────────────────────
-export default function AppScreen({ user, guestData, onLogout, theme, onToggleTheme, loginMsg, onLoginMsgDismiss }: AppScreenProps) {
+export default function AppScreen({ user, guestData, onLogout, theme, onToggleTheme, loginMsg, onLoginMsgDismiss, layoutPreview = false }: AppScreenProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -368,6 +371,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [clickPos, setClickPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [isPickingLocation, setIsPickingLocation] = useState(false);
+  const pickingLocationRef = useRef(false);
   const [saved, setSaved] = useState(false);
 
   // Form state
@@ -384,6 +389,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   // Stats filter — toggled by clicking the green "Aktywne" or grey "Wygasłe" stat tiles.
   // 'all'  → no filter | 'active' → expiresAt is null OR > now | 'expired' → expiresAt <= now
   const [statsFilter, setStatsFilter] = useState<"all" | "active" | "expired">("all");
+  const [markerSearch, setMarkerSearch] = useState("");
+  const [markerSort, setMarkerSort] = useState<"newest" | "name">("newest");
 
 
   // Image preview modal state (admin: view uploaded image for any marker)
@@ -395,19 +402,21 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
   // Stats & Discoveries section collapse (persisted to localStorage)
   const [statsOpen, setStatsOpen] = useState<boolean>(() => {
-    return localStorage.getItem("th_stats_open") !== "false";
+    return localStorage.getItem("th_stats_open_v2") === "true";
   });
   const toggleStats = () => {
     setStatsOpen((v) => {
       const next = !v;
-      localStorage.setItem("th_stats_open", String(next));
+      localStorage.setItem("th_stats_open_v2", String(next));
       return next;
     });
   };
 
   // Reverse-geocode cache: code → street label
   const geocacheRef = useRef<Map<string, string>>(new Map());
-  const [streetLabels, setStreetLabels] = useState<Record<string, string>>({});
+  const [streetLabels, setStreetLabels] = useState<Record<string, string>>((): Record<string, string> => layoutPreview
+    ? { ZL0TE: "Wały Chrobrego", M0NET: "Park Żeromskiego" }
+    : {});
 
   const isMobile = useIsMobile();
   // Sidebar open/closed for mobile. Default closed; synced to breakpoint.
@@ -420,16 +429,38 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const { toast } = useToast();
 
   const isAdmin = user?.role === "admin";
-  const { data: markers = [] } = useListMarkers({
-    query: { queryKey: getListMarkersQueryKey(), enabled: isAdmin },
+  const previewMarkers = useMemo<Marker[]>(() => {
+    const now = Date.now();
+    return [
+      { id: -1, title: "Złote jajko przy Wałach", description: "Szukaj przy dużym drzewie.", code: "ZL0TE", lat: 53.4288, lng: 14.5526, imageUrl: null, createdAt: new Date(now - 3_600_000).toISOString(), expiresAt: new Date(now + 2_870_000).toISOString(), activatedAt: new Date(now - 730_000).toISOString(), redemptionCount: 1 },
+      { id: -2, title: "Tajemnicza skrzynka", description: "Rozejrzyj się w pobliżu fontanny.", code: "SK4RB", lat: 53.4323, lng: 14.5591, imageUrl: null, createdAt: new Date(now - 7_200_000).toISOString(), expiresAt: null, activatedAt: null, redemptionCount: 0 },
+      { id: -3, title: "Moneta podróżnika", description: "Podążaj za wskazówką.", code: "M0NET", lat: 53.4247, lng: 14.5452, imageUrl: null, createdAt: new Date(now - 86_400_000).toISOString(), expiresAt: new Date(now - 3_600_000).toISOString(), activatedAt: new Date(now - 4_200_000).toISOString(), redemptionCount: 1 },
+    ];
+  }, []);
+  const { data: liveMarkers = [] } = useListMarkers({
+    query: { queryKey: getListMarkersQueryKey(), enabled: isAdmin && !layoutPreview },
   });
-  const { data: stats } = useGetStats({
-    query: { queryKey: getGetStatsQueryKey(), enabled: isAdmin },
+  const markers = layoutPreview ? previewMarkers : liveMarkers;
+  const { data: liveStats } = useGetStats({
+    query: { queryKey: getGetStatsQueryKey(), enabled: isAdmin && !layoutPreview },
   });
-  const { data: discoveries } = useGetDiscoveries({
+  const stats: Stats | undefined = layoutPreview
+    ? { totalMarkers: 3, activeMarkers: 2, expiredMarkers: 1, totalRedemptions: 2 }
+    : liveStats;
+  const { data: liveDiscoveries } = useGetDiscoveries({
     // Auto-refresh so the counter and recent log stay live while the admin watches.
-    query: { queryKey: getGetDiscoveriesQueryKey(), enabled: isAdmin, refetchInterval: 5000 },
+    query: { queryKey: getGetDiscoveriesQueryKey(), enabled: isAdmin && !layoutPreview, refetchInterval: layoutPreview ? false : 5000 },
   });
+  const discoveries: Discoveries | undefined = layoutPreview
+    ? {
+        count: 2,
+        lastResetAt: new Date().toISOString(),
+        recent: [
+          { code: "ZL0TE", activatedAt: new Date(Date.now() - 730_000).toISOString() },
+          { code: "M0NET", activatedAt: new Date(Date.now() - 4_200_000).toISOString() },
+        ],
+      }
+    : liveDiscoveries;
 
   const createMarker = useCreateMarker();
   const deleteMarker = useDeleteMarker();
@@ -438,13 +469,24 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   // Filtered marker list driven by the stats-tile toggle.
   // Source of truth for both the list rendering AND the map placement effect.
   const filteredMarkers = useMemo(() => {
-    if (statsFilter === "all") return markers;
     const now = Date.now();
-    return markers.filter((m) => {
+    const query = markerSearch.trim().toLocaleLowerCase("pl-PL");
+    const filtered = markers.filter((m) => {
       const expired = m.expiresAt !== null && new Date(m.expiresAt).getTime() <= now;
-      return statsFilter === "active" ? !expired : expired;
+      const matchesStatus = statsFilter === "all" || (statsFilter === "active" ? !expired : expired);
+      const matchesSearch = !query || m.title.toLocaleLowerCase("pl-PL").includes(query) || m.code.toLocaleLowerCase("pl-PL").includes(query);
+      return matchesStatus && matchesSearch;
     });
-  }, [markers, statsFilter]);
+    return filtered.sort((a, b) => markerSort === "name"
+      ? a.title.localeCompare(b.title, "pl")
+      : b.createdAt.localeCompare(a.createdAt));
+  }, [markers, statsFilter, markerSearch, markerSort]);
+
+  const startLocationSelection = () => {
+    pickingLocationRef.current = true;
+    setIsPickingLocation(true);
+    if (isMobile) setSidebarCollapsed(true);
+  };
 
   const showSaved = () => {
     setSaved(true);
@@ -480,7 +522,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
     if (isAdmin) {
       mapRef.current.on("click", (e) => {
+        if (!pickingLocationRef.current) return;
         setClickPos({ lat: e.latlng.lat, lng: e.latlng.lng });
+        pickingLocationRef.current = false;
+        setIsPickingLocation(false);
         setIsSheetOpen(true);
       });
     }
@@ -589,6 +634,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
   const handleCreateMarker = (e: React.FormEvent) => {
     e.preventDefault();
+    if (layoutPreview) return;
     if (!clickPos || !newTitle || !newDesc) return;
     createMarker.mutate(
       { data: { title: newTitle, description: newDesc, lat: clickPos.lat, lng: clickPos.lng, imageUrl: newImg } },
@@ -612,6 +658,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   };
 
   const handleDeleteMarker = (id: number) => {
+    if (layoutPreview) return;
     deleteMarker.mutate(
       { id },
       {
@@ -651,6 +698,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   };
 
   const handleResetDiscoveries = () => {
+    if (layoutPreview) return;
     resetDiscoveries.mutate(undefined, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetDiscoveriesQueryKey() });
@@ -699,6 +747,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   // Reverse-geocode recent activations (Nominatim)
   // ─────────────────────────────────────────────
   useEffect(() => {
+    if (layoutPreview) return;
     if (!discoveries?.recent?.length || !markers.length) return;
     for (const r of discoveries.recent) {
       if (geocacheRef.current.has(r.code)) continue;
@@ -730,7 +779,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       })();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discoveries?.recent, markers]);
+  }, [discoveries?.recent, markers, layoutPreview]);
 
   // ─────────────────────────────────────────────
   // Guest: code expiry timer in topbar info chip
@@ -749,6 +798,32 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       {/* ── Map + overlays ── */}
       <div className="flex-1 relative bg-slate-100 z-0">
         <div id="map" ref={mapContainer} className="absolute inset-0 w-full h-full" />
+
+        {isAdmin && (
+          <Button
+            type="button"
+            onClick={startLocationSelection}
+            className="absolute top-3 left-14 z-[1200] h-10 rounded-xl bg-green-700 px-3.5 text-sm font-semibold text-white shadow-lg hover:bg-green-800"
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Dodaj skarb
+          </Button>
+        )}
+
+        {isPickingLocation && (
+          <div className="absolute left-1/2 top-16 z-[1000] flex w-[min(92vw,390px)] -translate-x-1/2 items-center justify-between gap-3 rounded-xl border border-green-200 bg-white/95 px-4 py-3 text-sm text-green-950 shadow-lg backdrop-blur dark:border-green-800 dark:bg-gray-900/95 dark:text-green-100">
+            <span>Wskaż miejsce skarbu, klikając mapę.</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 px-2 text-gray-600 dark:text-gray-300"
+              onClick={() => { pickingLocationRef.current = false; setIsPickingLocation(false); }}
+            >
+              Anuluj
+            </Button>
+          </div>
+        )}
 
         {/* Address search (admin) — bottom-centered, responsive width */}
         {isAdmin && (
@@ -826,16 +901,28 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
             <aside
               className={`
-                absolute right-0 top-0 bottom-0 z-[1050]
-                flex flex-col bg-[#fafbfc] dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-xl
-                overflow-y-auto
+                absolute z-[1050] flex flex-col bg-[#fafbfc] shadow-xl dark:bg-gray-900
+                overflow-hidden border-gray-200 dark:border-gray-700
                 transition-transform duration-300 ease-in-out
                 ${isMobile
-                  ? (sidebarCollapsed ? "translate-x-full" : "translate-x-0")
-                  : "translate-x-0"}
+                  ? `inset-x-0 bottom-0 top-auto h-[min(78dvh,680px)] rounded-t-2xl border-t ${sidebarCollapsed ? "translate-y-[calc(100%-4.25rem)]" : "translate-y-0"}`
+                  : "right-0 top-0 bottom-0 border-l translate-y-0"}
               `}
-              style={{ width: isMobile ? "min(86vw, 340px)" : "320px" }}
+              style={{ width: isMobile ? "100%" : "clamp(360px, 30vw, 420px)" }}
             >
+              {isMobile && (
+                <button
+                  type="button"
+                  aria-expanded={!sidebarCollapsed}
+                  aria-label={sidebarCollapsed ? "Rozwiń panel skarbów" : "Zwiń panel skarbów"}
+                  onClick={() => setSidebarCollapsed((v) => !v)}
+                  className="flex h-9 shrink-0 items-center justify-center gap-2 border-b border-gray-200 bg-white text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  <span className="h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-600" />
+                  Skarby ({filteredMarkers.length})
+                  {sidebarCollapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+              )}
               {/* ── Header ── */}
               <div className="px-4 h-12 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
@@ -866,7 +953,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 p-3">
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
 
                 {/* ── Combined: STATYSTYKI & ODKRYCIA (collapsible) ── */}
                 <section className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
@@ -991,7 +1078,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                                 Brak aktywacji od ostatniego resetu.
                               </div>
                             ) : (
-                              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900 rounded-lg px-3 py-2 font-mono text-[10px] leading-relaxed space-y-0.5 text-yellow-900 dark:text-yellow-200">
+                              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900 rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed space-y-1 text-yellow-900 dark:text-yellow-200">
                                 {discoveries.recent.map((r) => (
                                   <div key={`${r.code}-${r.activatedAt}`}>
                                     <span className="text-yellow-600 dark:text-yellow-400">({formatLogTime(r.activatedAt)})</span>
@@ -1025,6 +1112,16 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       {saved && (
                         <span className="text-[10px] font-bold text-green-600 dark:text-green-400">✓ Zapisano</span>
                       )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={startLocationSelection}
+                        className="h-8 px-2 text-xs font-semibold bg-green-700 text-white hover:bg-green-800"
+                        title="Dodaj skarb"
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        Dodaj
+                      </Button>
                       <button
                         type="button"
                         onClick={() => queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() })}
@@ -1036,7 +1133,38 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                     </div>
                   </div>
 
-                  <div className="p-3 flex flex-col gap-2">
+                  <div className="flex flex-col gap-2 p-3">
+                    <div className="flex gap-2">
+                      <div className="relative min-w-0 flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <Input
+                          value={markerSearch}
+                          onChange={(e) => setMarkerSearch(e.target.value)}
+                          placeholder="Szukaj skarbów"
+                          aria-label="Szukaj skarbów po nazwie lub kodzie"
+                          className="h-10 rounded-lg bg-gray-50 pl-9 text-sm dark:bg-gray-700"
+                        />
+                        {markerSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setMarkerSearch("")}
+                            aria-label="Wyczyść wyszukiwanie"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                      <select
+                        aria-label="Sortuj skarby"
+                        value={markerSort}
+                        onChange={(e) => setMarkerSort(e.target.value as "newest" | "name")}
+                        className="h-10 max-w-[112px] rounded-lg border border-gray-200 bg-gray-50 px-2 text-xs text-gray-700 outline-none focus-visible:ring-2 focus-visible:ring-green-600 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                      >
+                        <option value="newest">Najnowsze</option>
+                        <option value="name">Nazwa A–Z</option>
+                      </select>
+                    </div>
                     {filteredMarkers.map((m) => (
                       <MarkerRow
                         key={m.id}
@@ -1051,8 +1179,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                     {filteredMarkers.length === 0 && (
                       <div className="text-center p-4 text-gray-500 dark:text-gray-400 text-sm">
                         {markers.length === 0
-                          ? "Brak skarbów. Kliknij na mapę, aby dodać nowy."
-                          : "Brak skarbów pasujących do filtra."}
+                          ? "Brak skarbów. Wybierz „Dodaj skarb”, aby rozpocząć."
+                          : markerSearch.trim()
+                            ? "Nie znaleziono skarbów dla tego wyszukiwania."
+                            : "Brak skarbów pasujących do filtra."}
                       </div>
                     )}
                   </div>
@@ -1105,6 +1235,18 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
             </SheetDescription>
           </SheetHeader>
           <form onSubmit={handleCreateMarker} className="mt-4 space-y-4">
+            {clickPos && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-900 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200">
+                <span>Miejsce wybrane na mapie</span>
+                <button
+                  type="button"
+                  className="font-semibold underline underline-offset-2"
+                  onClick={() => { setIsSheetOpen(false); startLocationSelection(); }}
+                >
+                  Zmień miejsce
+                </button>
+              </div>
+            )}
             <div className="space-y-2">
               <label className="text-sm font-medium">Nazwa</label>
               <Input

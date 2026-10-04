@@ -327,7 +327,7 @@
    natural colours are preserved. Only the tile pane is filtered —
    markers, popups, and controls are unaffected. ── */
 .dark .leaflet-tile-pane {
-  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+  filter: invert(100%) hue-rotate(180deg) brightness(110%) contrast(88%);
 }
 
 /* ── Dark mode Leaflet overrides ── */
