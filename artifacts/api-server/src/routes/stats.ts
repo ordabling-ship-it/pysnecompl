@@ -1,8 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db, markersTable, redemptionsTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { isNull, sql } from "drizzle-orm";
+import { requireAdmin } from "../lib/admin-session";
 
 const router: IRouter = Router();
+router.use(requireAdmin);
 
 router.get("/stats", async (_req, res): Promise<void> => {
   const [markerStats] = await db
@@ -14,7 +16,8 @@ router.get("/stats", async (_req, res): Promise<void> => {
       active: sql<number>`count(*) filter (where expires_at IS NULL OR expires_at > now())::int`,
       expired: sql<number>`count(*) filter (where expires_at IS NOT NULL AND expires_at <= now())::int`,
     })
-    .from(markersTable);
+    .from(markersTable)
+    .where(isNull(markersTable.archivedAt));
 
   const [redemptionStats] = await db
     .select({

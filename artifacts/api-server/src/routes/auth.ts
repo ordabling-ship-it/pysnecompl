@@ -5,6 +5,12 @@ import {
   AdminLoginBody,
   GuestLoginBody,
 } from "@workspace/api-zod";
+import {
+  clearAdminSession,
+  getAuthenticatedAdmin,
+  setAdminSession,
+} from "../lib/admin-session";
+import { verifyPassword } from "../lib/password";
 
 const router: IRouter = Router();
 
@@ -22,6 +28,11 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
 
   const { username, password } = parsed.data;
 
+  if (username.length > 254 || password.length > 1024) {
+    res.status(401).json({ error: "Nieprawidłowe dane administratora." });
+    return;
+  }
+
   const [user] = await db
     .select()
     .from(usersTable)
@@ -32,13 +43,31 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
     return;
   }
 
-  if (user.passwordHash !== password) {
+  if (!(await verifyPassword(password, user.passwordHash))) {
     res.status(401).json({ error: "Nieprawidłowe dane administratora." });
     return;
   }
 
   req.log.info({ userId: user.id }, "Admin logged in");
+  res.setHeader("Cache-Control", "no-store");
+  setAdminSession(res, user.id);
   res.json({ id: user.id, name: user.name, role: user.role });
+});
+
+router.get("/auth/session", async (req, res): Promise<void> => {
+  const user = await getAuthenticatedAdmin(req);
+  res.setHeader("Cache-Control", "no-store");
+  if (!user) {
+    clearAdminSession(res);
+    res.status(401).json({ error: "Sesja administratora wygasła." });
+    return;
+  }
+  res.json(user);
+});
+
+router.post("/auth/logout", (_req, res): void => {
+  clearAdminSession(res);
+  res.sendStatus(204);
 });
 
 router.post("/auth/guest-login", async (req, res): Promise<void> => {
@@ -54,7 +83,7 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
   const [marker] = await db
     .select()
     .from(markersTable)
-    .where(eq(markersTable.code, upperCode));
+    .where(and(eq(markersTable.code, upperCode), isNull(markersTable.archivedAt)));
 
   if (!marker) {
     res.status(401).json({ error: "Ten kod jest nieprawidłowy." });

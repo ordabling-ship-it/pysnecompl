@@ -1,5 +1,5 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect, useState } from "react";
@@ -50,6 +50,7 @@ function MainApp() {
 
   // Welcome notification shown after admin login at bottom-center of screen.
   const [loginMsg, setLoginMsg] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // ── Theme management (light / dark) ──────────────────────────────────────
   // Priority: manual override in localStorage → time-based auto selection.
@@ -83,24 +84,41 @@ function MainApp() {
   };
   // ─────────────────────────────────────────────────────────────────────────
 
-  // On reload, if we have a saved guest session, ask the server for fresh state.
+  // Restore the signed admin cookie first, then fall back to the saved guest code.
   useEffect(() => {
-    const saved = localStorage.getItem(GUEST_SESSION_KEY);
-    if (!saved) {
-      setHydrating(false);
-      return;
-    }
-    try {
-      const { code } = JSON.parse(saved) as { code: string };
-      const guestToken = getOrCreateGuestToken();
-      guestLogin({ code, guestToken })
-        .then((data) => setGuestData(data))
-        .catch(() => localStorage.removeItem(GUEST_SESSION_KEY))
-        .finally(() => setHydrating(false));
-    } catch {
-      localStorage.removeItem(GUEST_SESSION_KEY);
-      setHydrating(false);
-    }
+    let mounted = true;
+    const restoreSession = async () => {
+      try {
+        const response = await fetch("/api/auth/session", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        });
+        if (response.ok) {
+          const admin = await response.json() as { id: number; name: string; role: string };
+          if (mounted) setUser(admin);
+          localStorage.removeItem(GUEST_SESSION_KEY);
+          return;
+        }
+      } catch {
+        // A missing or expired admin cookie falls through to guest restoration.
+      }
+
+      const saved = localStorage.getItem(GUEST_SESSION_KEY);
+      if (!saved) return;
+      try {
+        const { code } = JSON.parse(saved) as { code: string };
+        const guestToken = getOrCreateGuestToken();
+        const guest = await guestLogin({ code, guestToken });
+        if (mounted) setGuestData(guest);
+      } catch {
+        localStorage.removeItem(GUEST_SESSION_KEY);
+      }
+    };
+
+    void restoreSession().finally(() => {
+      if (mounted) setHydrating(false);
+    });
+    return () => { mounted = false; };
   }, []);
 
   const handleAdminLogin = (data: { id: number; name: string; role: string }) => {
@@ -113,10 +131,20 @@ function MainApp() {
     localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify({ code: data.code }));
   };
 
-  const handleLogout = () => {
-    setUser(null);
-    setGuestData(null);
-    localStorage.removeItem(GUEST_SESSION_KEY);
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } catch {
+      // Clear local admin state even if the server is temporarily unreachable.
+    } finally {
+      queryClient.clear();
+      setUser(null);
+      setGuestData(null);
+      localStorage.removeItem(GUEST_SESSION_KEY);
+    }
   };
 
   if (hydrating) {

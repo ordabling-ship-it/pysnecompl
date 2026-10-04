@@ -1,8 +1,10 @@
 import { Router, type IRouter } from "express";
-import { sql, gte, isNotNull, and, desc, eq } from "drizzle-orm";
+import { sql, gte, isNotNull, and, desc, eq, isNull } from "drizzle-orm";
 import { db, markersTable, settingsTable } from "@workspace/db";
+import { requireAdmin } from "../lib/admin-session";
 
 const router: IRouter = Router();
+router.use(requireAdmin);
 
 // Singleton settings row id. ALL reads/updates are hard-scoped to this id so
 // that, even if a stray row appears, behavior stays deterministic and reset
@@ -31,13 +33,21 @@ router.get("/discoveries", async (_req, res): Promise<void> => {
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(markersTable)
-    .where(and(isNotNull(markersTable.activatedAt), gte(markersTable.activatedAt, since)));
+    .where(and(
+      isNull(markersTable.archivedAt),
+      isNotNull(markersTable.activatedAt),
+      gte(markersTable.activatedAt, since),
+    ));
 
   // 5 most recent activations since the last reset, newest first
   const recent = await db
     .select({ code: markersTable.code, activatedAt: markersTable.activatedAt })
     .from(markersTable)
-    .where(and(isNotNull(markersTable.activatedAt), gte(markersTable.activatedAt, since)))
+    .where(and(
+      isNull(markersTable.archivedAt),
+      isNotNull(markersTable.activatedAt),
+      gte(markersTable.activatedAt, since),
+    ))
     .orderBy(desc(markersTable.activatedAt))
     .limit(5);
 

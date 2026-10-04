@@ -19,6 +19,8 @@ export const markersTable = pgTable("markers", {
   // with `expiresAt`. Drives the "Activation date" display in the admin UI and
   // the global "discoveries since reset" counter.
   activatedAt: timestamp("activated_at", { withTimezone: true }),
+  // Soft deletion keeps redemption history and avoids breaking the foreign key.
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
 });
 
 export const insertMarkerSchema = createInsertSchema(markersTable).omit({

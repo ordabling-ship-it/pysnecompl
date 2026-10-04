@@ -13,5 +13,7 @@ services:
         value: "24"
       - key: NODE_ENV
         value: production
+      - key: SESSION_SECRET
+        generateValue: true
       - key: DATABASE_URL
         sync: false

@@ -1,12 +1,14 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 import { db, redemptionsTable, markersTable } from "@workspace/db";
 import {
   CreateRedemptionBody,
   ListRedemptionsQueryParams,
 } from "@workspace/api-zod";
+import { requireAdmin } from "../lib/admin-session";
 
 const router: IRouter = Router();
+router.use(requireAdmin);
 
 router.get("/redemptions", async (req, res): Promise<void> => {
   const params = ListRedemptionsQueryParams.safeParse(req.query);
@@ -59,7 +61,10 @@ router.post("/redemptions", async (req, res): Promise<void> => {
   const [marker] = await db
     .select()
     .from(markersTable)
-    .where(eq(markersTable.code, upperCode));
+    .where(and(
+      eq(markersTable.code, upperCode),
+      isNull(markersTable.archivedAt),
+    ));
 
   if (!marker) {
     res.status(400).json({ error: "Nieprawidłowy kod" });
@@ -72,25 +77,32 @@ router.post("/redemptions", async (req, res): Promise<void> => {
     return;
   }
 
-  const [existing] = await db
-    .select()
-    .from(redemptionsTable)
-    .where(
-      and(
-        eq(redemptionsTable.userId, userId),
-        eq(redemptionsTable.markerId, marker.id)
-      )
-    );
+  const redemption = await db.transaction(async (tx) => {
+    // Serialize this user/marker pair across server instances. The unique
+    // index is an additional database-level guard when existing data permits it.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}, ${marker.id})`);
 
-  if (existing) {
+    const [existing] = await tx
+      .select()
+      .from(redemptionsTable)
+      .where(and(
+        eq(redemptionsTable.userId, userId),
+        eq(redemptionsTable.markerId, marker.id),
+      ));
+    if (existing) return null;
+
+    const [created] = await tx
+      .insert(redemptionsTable)
+      .values({ userId, markerId: marker.id })
+      .onConflictDoNothing()
+      .returning();
+    return created ?? null;
+  });
+
+  if (!redemption) {
     res.status(400).json({ error: "Ta moneta już odblokowana!" });
     return;
   }
-
-  const [redemption] = await db
-    .insert(redemptionsTable)
-    .values({ userId, markerId: marker.id })
-    .returning();
 
   req.log.info({ userId, markerId: marker.id }, "Code redeemed");
   res.status(201).json({

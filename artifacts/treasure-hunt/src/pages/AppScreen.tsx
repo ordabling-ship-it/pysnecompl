@@ -78,6 +78,10 @@ async function processImageFile(file: File): Promise<string> {
           quality -= 0.08;
           dataUrl = canvas.toDataURL("image/jpeg", quality);
         }
+        if (dataUrl.length > 1_500_000) {
+          reject(new Error("Image is larger than the upload limit"));
+          return;
+        }
         resolve(dataUrl);
       };
       img.onerror = () => reject(new Error("Invalid image"));
@@ -149,6 +153,29 @@ function formatShortDate(iso: string): string {
 // Guest Leaflet popup HTML (static — the single
 // countdown lives in the bottom-center chip).
 // ─────────────────────────────────────────────
+function escapePopupHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&": return "&amp;";
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case '"': return "&quot;";
+      default: return "&#39;";
+    }
+  });
+}
+
+function safePopupImageUrl(value: string | null): string | null {
+  if (!value) return null;
+  if (/^data:image\/jpeg;base64,[A-Za-z0-9+/]*={0,2}$/.test(value)) return value;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildGuestPopupHtml(g: GuestData, isDark = false): string {
   const bg        = isDark ? "#1f2937" : "#ffffff";
   const titleClr  = isDark ? "#fbbf24" : "#d97706";
@@ -156,15 +183,16 @@ function buildGuestPopupHtml(g: GuestData, isDark = false): string {
   const badgeBg   = isDark ? "#374151" : "#fef3c7";
   const badgeClr  = isDark ? "#fde68a" : "#92400e";
 
-  const imageBlock = g.imageUrl
-    ? `<img src="${g.imageUrl}" style="width:100%;height:96px;object-fit:cover;border-radius:4px;margin-bottom:8px"/>`
+  const imageUrl = safePopupImageUrl(g.imageUrl);
+  const imageBlock = imageUrl
+    ? `<img src="${escapePopupHtml(imageUrl)}" style="width:100%;height:96px;object-fit:cover;border-radius:4px;margin-bottom:8px"/>`
     : "";
 
   return `
     <div style="padding:8px;min-width:230px;background:${bg};border-radius:4px">
       ${imageBlock}
-      <h3 style="font-weight:700;font-size:15px;color:${titleClr}">${g.markerTitle}</h3>
-      <p style="font-size:12px;color:${textClr};margin-top:4px;font-style:italic">💡 ${g.markerDescription}</p>
+      <h3 style="font-weight:700;font-size:15px;color:${titleClr}">${escapePopupHtml(g.markerTitle)}</h3>
+      <p style="font-size:12px;color:${textClr};margin-top:4px;font-style:italic">💡 ${escapePopupHtml(g.markerDescription)}</p>
       <span style="display:inline-block;margin-top:8px;padding:2px 8px;background:${badgeBg};color:${badgeClr};border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase">Moneta znaleziona!</span>
       <button onclick="window.__thNavigate(${g.lat}, ${g.lng})"
         style="margin-top:10px;width:100%;background:#2563eb;color:#fff;font-size:13px;font-weight:600;padding:7px 10px;border:none;border-radius:6px;cursor:pointer">
@@ -277,12 +305,12 @@ function MarkerRow({
               <Eye className="w-3 h-3" />
             </Button>
           )}
-          {/* Delete button */}
+          {/* Hide button — the server archives the marker so history remains intact. */}
           <Button
             variant="ghost"
             size="icon"
             className="w-6 h-6 text-red-400 hover:text-red-700 hover:bg-red-50"
-            title="Usuń skarb"
+            title="Ukryj skarb"
             onClick={(e) => { e.stopPropagation(); onDelete(m.id); }}
           >
             <Trash2 className="w-3 h-3" />
@@ -534,8 +562,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       const pinHtml = expired ? expiredPinHtml : counting ? redPinHtml : adminPinHtml;
       const titleClr = expired ? (dark ? "#6b7280" : "#9ca3af") : (dark ? "#6ee7b7" : "#166534");
       const codeClr  = expired ? (dark ? "#6b7280" : "#9ca3af") : (dark ? "#6ee7b7" : "#15803d");
-      const imgHtml = m.imageUrl
-        ? `<img src="${m.imageUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:6px"/>`
+      const imageUrl = safePopupImageUrl(m.imageUrl ?? null);
+      const imgHtml = imageUrl
+        ? `<img src="${escapePopupHtml(imageUrl)}" style="width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:6px"/>`
         : `<div style="width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:${descClr};font-size:11px;font-style:italic;margin-bottom:6px">Brak zdjęcia</div>`;
       const marker = L.marker([m.lat, m.lng], {
         icon: createIcon(pinHtml),
@@ -545,10 +574,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         .bindPopup(`
           <div style="padding:8px;min-width:200px;background:${popupBg};border-radius:4px">
             ${imgHtml}
-            <h3 style="font-weight:700;font-size:14px;color:${titleClr}">${m.title}${expired ? " (Wygasły)" : ""}</h3>
-            <p style="font-size:12px;color:${descClr};margin-top:4px">${m.description}</p>
+            <h3 style="font-weight:700;font-size:14px;color:${titleClr}">${escapePopupHtml(m.title)}${expired ? " (Wygasły)" : ""}</h3>
+            <p style="font-size:12px;color:${descClr};margin-top:4px">${escapePopupHtml(m.description)}</p>
             <div style="margin-top:8px;background:${codePanBg};padding:6px;border-radius:4px;text-align:center">
-              <code style="font-family:monospace;font-weight:700;letter-spacing:0.1em;color:${codeClr};${expired ? "text-decoration:line-through" : ""}">${m.code}</code>
+              <code style="font-family:monospace;font-weight:700;letter-spacing:0.1em;color:${codeClr};${expired ? "text-decoration:line-through" : ""}">${escapePopupHtml(m.code)}</code>
             </div>
           </div>
         `);
@@ -589,7 +618,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetStatsQueryKey() });
-          toast({ title: "Skarb usunięty" });
+          toast({ title: "Skarb ukryty" });
           showSaved();
         },
       }
@@ -648,7 +677,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       if (searchMarkerRef.current) searchMarkerRef.current.remove();
       searchMarkerRef.current = L.marker([lat, lng], { icon: createIcon(searchPinHtml) })
         .addTo(mapRef.current)
-        .bindPopup(`<div style="padding:4px"><b>📍 ${data[0].display_name}</b></div>`)
+        .bindPopup(`<div style="padding:4px"><b>📍 ${escapePopupHtml(String(data[0].display_name ?? ""))}</b></div>`)
         .openPopup();
     } catch {
       toast({ variant: "destructive", title: "Błąd", description: "Nie udało się wyszukać adresu." });
@@ -1189,10 +1218,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           <DialogHeader>
             <DialogTitle className="text-green-900">{previewMarker?.title}</DialogTitle>
           </DialogHeader>
-          {previewMarker?.imageUrl ? (
+          {previewMarker && safePopupImageUrl(previewMarker.imageUrl ?? null) ? (
             <div className="rounded-md overflow-hidden border">
               <img
-                src={previewMarker.imageUrl}
+                src={safePopupImageUrl(previewMarker.imageUrl ?? null) ?? undefined}
                 alt={previewMarker.title}
                 className="w-full object-contain max-h-72"
               />
