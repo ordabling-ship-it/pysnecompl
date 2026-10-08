@@ -955,6 +955,13 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
               <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
 
+                <a
+                  href="/cennik.html"
+                  className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-center text-sm font-semibold text-green-900 hover:bg-green-100 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200 dark:hover:bg-green-950/70"
+                >
+                  Cennik konta administratora
+                </a>
+
                 {/* ── Combined: STATYSTYKI & ODKRYCIA (collapsible) ── */}
                 <section className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
                   {/* Section title — click anywhere on header to collapse */}

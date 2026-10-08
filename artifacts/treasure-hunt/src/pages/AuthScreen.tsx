@@ -125,6 +125,9 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                 >
                   Panel administratora
                 </Button>
+                <a href="/cennik.html" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
+                  Cennik konta administratora
+                </a>
               </CardFooter>
             </form>
           </>
@@ -174,7 +177,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                 )}
               </CardContent>
 
-              <CardFooter>
+              <CardFooter className="flex-col gap-3">
                 <Button
                   type="submit"
                   className="w-full bg-green-700 hover:bg-green-800 dark:bg-green-800 dark:hover:bg-green-700 text-white"
@@ -183,6 +186,9 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                   {adminLogin.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <User className="w-5 h-5 mr-2" />}
                   Zaloguj jako admin
                 </Button>
+                <a href="/cennik.html" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
+                  Cennik konta administratora
+                </a>
               </CardFooter>
             </form>
           </>

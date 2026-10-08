@@ -23,6 +23,7 @@ export type GuestData = {
 
 const GUEST_SESSION_KEY = "th_guest_session";
 const GUEST_TOKEN_KEY = "th_guest_token";
+const TERMS_ACCEPTED_KEY = "pysne_terms_accepted_v1";
 
 // Stable per-browser guest identity (kept for backwards compatibility with the
 // API contract — the server still accepts it but the marker timer is now
@@ -50,6 +51,7 @@ function MainApp() {
   );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
   const [hydrating, setHydrating] = useState(!layoutPreview);
+  const [termsAccepted, setTermsAccepted] = useState(() => localStorage.getItem(TERMS_ACCEPTED_KEY) === "true");
 
   // Welcome notification shown after admin login at bottom-center of screen.
   const [loginMsg, setLoginMsg] = useState<string | null>(null);
@@ -89,7 +91,7 @@ function MainApp() {
 
   // Restore the signed admin cookie first, then fall back to the saved guest code.
   useEffect(() => {
-    if (layoutPreview) return;
+    if (layoutPreview || !termsAccepted) return;
     let mounted = true;
     const restoreSession = async () => {
       try {
@@ -123,7 +125,7 @@ function MainApp() {
       if (mounted) setHydrating(false);
     });
     return () => { mounted = false; };
-  }, [layoutPreview]);
+  }, [layoutPreview, termsAccepted]);
 
   const handleAdminLogin = (data: { id: number; name: string; role: string }) => {
     setUser(data);
@@ -150,6 +152,36 @@ function MainApp() {
       localStorage.removeItem(GUEST_SESSION_KEY);
     }
   };
+
+  if (!termsAccepted) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-green-900 to-amber-600 p-4 dark:from-gray-900 dark:to-gray-800">
+        <section className="w-full max-w-lg rounded-2xl bg-white p-7 text-center shadow-2xl dark:border dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 sm:p-9">
+          <img src="/logo.png" alt="Pysne.com.pl" className="mx-auto mb-5 h-16 w-16 object-contain" />
+          <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">Podchody 2.0</p>
+          <h1 className="mb-3 text-2xl font-bold text-green-950 dark:text-green-300">Zanim rozpoczniesz grę</h1>
+          <p className="mb-6 text-sm leading-6 text-gray-600 dark:text-gray-300">
+            Zapoznaj się z zasadami bezpiecznej zabawy i korzystania z Pysne.com.pl. Udział w grze jest bezpłatny; zakupy dla administratorów są opcjonalne.
+          </p>
+          <div className="flex flex-col items-center gap-4">
+            <a href="/regulamin.html" className="font-semibold text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
+              Przeczytaj regulamin
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.setItem(TERMS_ACCEPTED_KEY, "true");
+                setTermsAccepted(true);
+              }}
+              className="w-full rounded-xl bg-green-700 px-5 py-3 font-semibold text-white shadow hover:bg-green-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700"
+            >
+              Akceptuję regulamin i przechodzę dalej
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   if (hydrating) {
     return (
