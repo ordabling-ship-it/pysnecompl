@@ -27,7 +27,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import {
   LogOut, Search, Shield, User, Image as ImageIcon, Trash2, RefreshCcw,
   BarChart3, List, Loader2, Copy, Eye, X, ChevronRight, ChevronLeft, Clock,
-  Check, ChevronDown, RotateCcw, Menu, Compass, MapPin, Sun, Moon, ChevronUp,
+  Check, ChevronDown, RotateCcw, Compass, MapPin, Sun, Moon, ChevronUp,
   Plus,
 } from "lucide-react";
 
@@ -873,22 +873,6 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         ── */}
         {isAdmin && (
           <>
-            {/* Mobile hamburger — top-right corner of the map */}
-            {isMobile && (
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed((v) => !v)}
-                aria-label={sidebarCollapsed ? "Otwórz panel" : "Zamknij panel"}
-                className="absolute top-3 right-3 z-[1100] w-11 h-11 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center active:scale-95 transition-transform"
-              >
-                {sidebarCollapsed ? (
-                  <Menu className="w-5 h-5 text-green-800" />
-                ) : (
-                  <X className="w-5 h-5 text-green-800" />
-                )}
-              </button>
-            )}
-
             {/* Mobile backdrop */}
             {isMobile && !sidebarCollapsed && (
               <button
@@ -960,6 +944,15 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-center text-sm font-semibold text-green-900 hover:bg-green-100 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200 dark:hover:bg-green-950/70"
                 >
                   Cennik konta administratora
+                </a>
+                <a
+                  href="https://buycoffee.to/czosnek"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
+                >
+                  Wesprzyj rozwój Pysne · BuyCoffee
+                  <span className="mt-1 block text-[11px] font-normal">Dobrowolne wsparcie nie dodaje pinezek ani nie aktywuje abonamentu.</span>
                 </a>
 
                 {/* ── Combined: STATYSTYKI & ODKRYCIA (collapsible) ── */}
