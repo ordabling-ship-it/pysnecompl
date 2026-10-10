@@ -1039,19 +1039,19 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 {canManageAccounts && !layoutPreview && (
                   <details className="rounded-xl border border-green-200 bg-white p-3 dark:border-green-900 dark:bg-gray-800">
                     <summary className="cursor-pointer font-semibold text-green-950 dark:text-green-100">
-                      {user?.role === "master_admin" ? "Panel główny · konta i statystyki" : "Konta administratorów"}
+                      {user?.role === "master_admin" ? "Panel główny · konta i statystyki" : "Konta kreatorów"}
                     </summary>
                     <form onSubmit={handleCreateManagedAccount} className="mt-3 space-y-2">
                       <label className="block text-xs font-medium">Login
                         <Input required minLength={3} maxLength={32} value={accountName} onChange={(event) => setAccountName(event.target.value)} className="mt-1 h-9" autoComplete="off" />
                       </label>
-                      <label className="block text-xs font-medium">Hasło tymczasowe (min. 15 znaków)
-                        <Input required minLength={15} maxLength={128} type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} className="mt-1 h-9" autoComplete="new-password" />
+                      <label className="block text-xs font-medium">Hasło tymczasowe dla {accountRole === "admin" ? "Kreatora (min. 8 znaków)" : "moderatora (min. 15 znaków)"}
+                        <Input required minLength={accountRole === "admin" ? 8 : 15} maxLength={128} type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} className="mt-1 h-9" autoComplete="new-password" />
                       </label>
                       {user?.role === "master_admin" && (
                         <label className="block text-xs font-medium">Rola
                           <select value={accountRole} onChange={(event) => setAccountRole(event.target.value)} className="mt-1 h-9 w-full rounded-md border bg-white px-2 dark:bg-gray-900">
-                            <option value="admin">Administrator gry</option>
+                            <option value="admin">Kreator</option>
                             <option value="moderator">Moderator</option>
                           </select>
                         </label>
@@ -1065,7 +1065,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       {managedUsers.map((managed) => (
                         <div key={managed.id} className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-900">
                           <div className="flex items-center justify-between gap-2 font-semibold">
-                            <span>{managed.name} <span className="font-normal text-gray-500">· {managed.role}</span></span>
+                            <span>{managed.name} <span className="font-normal text-gray-500">· {managed.role === "admin" ? "Kreator" : managed.role === "moderator" ? "Moderator" : managed.role}</span></span>
                             <span>{managed.pinBalance} pinezek</span>
                           </div>
                           <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>

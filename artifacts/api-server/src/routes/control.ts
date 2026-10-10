@@ -41,13 +41,14 @@ router.post("/control/users", requireRole(...MANAGER_ROLES), async (req, res): P
     res.status(400).json({ error: "Login musi mieć 3–32 znaki: litery, cyfry, myślnik lub podkreślenie." });
     return;
   }
-  if (typeof password !== "string" || password.length < 15 || password.length > 1024) {
-    res.status(400).json({ error: "Hasło musi mieć co najmniej 15 znaków." });
-    return;
-  }
   const allowedRoles = actor.role === "master_admin" ? ["admin", "moderator"] : ["admin"];
   if (typeof role !== "string" || !allowedRoles.includes(role)) {
     res.status(403).json({ error: "Nie możesz utworzyć konta z wybraną rolą." });
+    return;
+  }
+  const minimumPasswordLength = role === "admin" ? 8 : 15;
+  if (typeof password !== "string" || password.length < minimumPasswordLength || password.length > 1024) {
+    res.status(400).json({ error: `Hasło tymczasowe dla ${role === "admin" ? "Kreatora" : "moderatora"} musi mieć co najmniej ${minimumPasswordLength} znaków.` });
     return;
   }
   const slug = username.toLowerCase();
