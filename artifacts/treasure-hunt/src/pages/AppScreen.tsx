@@ -208,7 +208,7 @@ function buildGuestPopupHtml(g: GuestData, isDark = false): string {
 // Types
 // ─────────────────────────────────────────────
 type AppScreenProps = {
-  user: { id: number; name: string; role: string } | null;
+  user: { id: number; name: string; role: string; pinBalance?: number } | null;
   guestData: GuestData | null;
   onLogout: () => void;
   theme: "light" | "dark";
@@ -362,6 +362,46 @@ function MarkerRow({
 // Main AppScreen component
 // ─────────────────────────────────────────────
 export default function AppScreen({ user, guestData, onLogout, theme, onToggleTheme, loginMsg, onLoginMsgDismiss, layoutPreview = false }: AppScreenProps) {
+  const { toast } = useToast();
+  const [pinBalance, setPinBalance] = useState<number | null>(user?.pinBalance ?? null);
+  const [pinPurchaseOpen, setPinPurchaseOpen] = useState(false);
+  const [managedUsers, setManagedUsers] = useState<Array<{ id: number; name: string; slug: string; role: string; pinBalance: number; totalPins: number; discoveries: number; redemptions: number }>>([]);
+  const [managedActivity, setManagedActivity] = useState<Array<{ id: number; eventType: string; createdAt: string; actorName: string | null; details: Record<string, string | number | boolean | null> }>>([]);
+  const [accountName, setAccountName] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [accountRole, setAccountRole] = useState("admin");
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [accountBusy, setAccountBusy] = useState(false);
+  const canManageAccounts = user?.role === "moderator" || user?.role === "master_admin";
+  const loadManagedUsers = async () => {
+    const response = await fetch("/api/control/users", { credentials: "same-origin", headers: { Accept: "application/json" } });
+    if (response.ok) setManagedUsers(await response.json());
+    const activityResponse = await fetch("/api/control/activity", { credentials: "same-origin", headers: { Accept: "application/json" } });
+    if (activityResponse.ok) setManagedActivity(await activityResponse.json());
+  };
+  useEffect(() => {
+    if (canManageAccounts && !layoutPreview) void loadManagedUsers();
+  }, [canManageAccounts, layoutPreview]);
+  const handleCreateManagedAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAccountError(null);
+    setAccountBusy(true);
+    try {
+      const response = await fetch("/api/control/users", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ username: accountName, password: accountPassword, role: accountRole }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Nie udało się utworzyć konta.");
+      setAccountName(""); setAccountPassword("");
+      await loadManagedUsers();
+      toast({ title: "Konto utworzone", description: `Mapa: ${window.location.origin}/${result.slug} · saldo początkowe: 10 pinezek.` });
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "Nie udało się utworzyć konta.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -426,9 +466,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   }, [isMobile]);
 
   const queryClient = useQueryClient();
-  const { toast } = useToast();
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "moderator" || user?.role === "master_admin";
   const previewMarkers = useMemo<Marker[]>(() => {
     const now = Date.now();
     return [
@@ -642,6 +681,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         onSuccess: async (created) => {
           queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetStatsQueryKey() });
+          setPinBalance((balance) => balance == null ? balance : Math.max(0, balance - 1));
           showSaved();
           const ok = await copyToClipboard(created.code);
           toast({
@@ -652,6 +692,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           setNewTitle("");
           setNewDesc("");
           setNewImg(null);
+        },
+        onError: (error) => {
+          if ((error as { status?: number }).status === 402) setPinPurchaseOpen(true);
         },
       }
     );
@@ -955,6 +998,64 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   <span className="mt-1 block text-[11px] font-normal">Dobrowolne wsparcie nie dodaje pinezek ani nie aktywuje abonamentu.</span>
                 </a>
 
+                {user && !layoutPreview && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+                    Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong>
+                    <span className="block text-xs">Każdy nowy skarb zużywa 1 pinezkę. Pakiety są na stronie cennika.</span>
+                  </div>
+                )}
+
+                {canManageAccounts && !layoutPreview && (
+                  <details className="rounded-xl border border-green-200 bg-white p-3 dark:border-green-900 dark:bg-gray-800">
+                    <summary className="cursor-pointer font-semibold text-green-950 dark:text-green-100">
+                      {user?.role === "master_admin" ? "Panel główny · konta i statystyki" : "Konta administratorów"}
+                    </summary>
+                    <form onSubmit={handleCreateManagedAccount} className="mt-3 space-y-2">
+                      <label className="block text-xs font-medium">Login
+                        <Input required minLength={3} maxLength={32} value={accountName} onChange={(event) => setAccountName(event.target.value)} className="mt-1 h-9" autoComplete="off" />
+                      </label>
+                      <label className="block text-xs font-medium">Hasło tymczasowe (min. 15 znaków)
+                        <Input required minLength={15} maxLength={128} type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} className="mt-1 h-9" autoComplete="new-password" />
+                      </label>
+                      {user?.role === "master_admin" && (
+                        <label className="block text-xs font-medium">Rola
+                          <select value={accountRole} onChange={(event) => setAccountRole(event.target.value)} className="mt-1 h-9 w-full rounded-md border bg-white px-2 dark:bg-gray-900">
+                            <option value="admin">Administrator gry</option>
+                            <option value="moderator">Moderator</option>
+                          </select>
+                        </label>
+                      )}
+                      {accountError && <p role="alert" className="text-xs text-red-700 dark:text-red-300">{accountError}</p>}
+                      <Button type="submit" disabled={accountBusy} className="w-full bg-green-700 hover:bg-green-800">
+                        {accountBusy ? "Tworzenie…" : "Utwórz konto · 10 darmowych pinezek"}
+                      </Button>
+                    </form>
+                    <div className="mt-4 space-y-2 border-t pt-3">
+                      {managedUsers.map((managed) => (
+                        <div key={managed.id} className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-900">
+                          <div className="flex items-center justify-between gap-2 font-semibold">
+                            <span>{managed.name} <span className="font-normal text-gray-500">· {managed.role}</span></span>
+                            <span>{managed.pinBalance} pinezek</span>
+                          </div>
+                          <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>
+                          <a className="mt-1 inline-block text-green-800 underline dark:text-green-300" href={`/${managed.slug}`} target="_blank" rel="noreferrer">Otwórz mapę · /{managed.slug}</a>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 border-t pt-3">
+                      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">Ostatnie zdarzenia serwisu</div>
+                      <div className="max-h-56 space-y-2 overflow-y-auto">
+                        {managedActivity.map((event) => (
+                          <div key={event.id} className="rounded-md bg-gray-50 px-2.5 py-2 text-[11px] dark:bg-gray-900">
+                            <div className="font-semibold">{{ account_created: "Utworzono konto", marker_created: "Dodano skarb", treasure_activated: "Gość rozpoczął grę", code_redeemed: "Odblokowano kod", admin_login: "Logowanie administratora", master_bootstrapped: "Utworzono master admina" }[event.eventType] ?? event.eventType}</div>
+                            <div className="text-gray-600 dark:text-gray-300">{event.actorName ?? "Gość"}{event.details.username ? ` · ${event.details.username}` : ""} · {new Date(event.createdAt).toLocaleString("pl-PL")}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+                )}
+
                 {/* ── Combined: STATYSTYKI & ODKRYCIA (collapsible) ── */}
                 <section className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
                   {/* Section title — click anywhere on header to collapse */}
@@ -1057,7 +1158,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                             </div>
                           </div>
 
-                          <Button
+                          {user?.role === "master_admin" && <Button
                             type="button"
                             size="sm"
                             onClick={handleResetDiscoveries}
@@ -1066,7 +1167,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                           >
                             <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                             Resetuj licznik odkryć
-                          </Button>
+                          </Button>}
 
                           {/* Recent activations log — code + time + street name */}
                           <div>
@@ -1374,6 +1475,23 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
             </div>
           )}
           <p className="text-xs text-gray-500 italic">{previewMarker?.description}</p>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pinPurchaseOpen} onOpenChange={setPinPurchaseOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-green-900 dark:text-green-200">Wykorzystano darmowe pinezki</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Możesz dokupić jedną z trzech pul. Wybierz pakiet, żeby zobaczyć szczegóły.</p>
+          <div className="space-y-2">
+            {[{ name: "Mały", amount: 25, price: 29 }, { name: "Średni", amount: 100, price: 99 }, { name: "Duży", amount: 300, price: 249 }].map((pack) => (
+              <a key={pack.name} href="/cennik.html#pakiety" className="flex items-center justify-between rounded-lg border border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
+                <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł</strong>
+              </a>
+            ))}
+          </div>
+          <p className="text-xs text-amber-800 dark:text-amber-300">Zakupów online jeszcze nie włączono. Cennik pokazuje ceny, ale nie pobiera płatności ani nie dodaje pinezek.</p>
         </DialogContent>
       </Dialog>
     </div>

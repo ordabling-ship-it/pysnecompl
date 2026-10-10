@@ -1,12 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db, markersTable, redemptionsTable } from "@workspace/db";
-import { isNull, sql } from "drizzle-orm";
-import { requireAdmin } from "../lib/admin-session";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { requireAdmin, type AdminUser } from "../lib/admin-session";
 
 const router: IRouter = Router();
 router.use(requireAdmin);
 
 router.get("/stats", async (_req, res): Promise<void> => {
+  const admin = res.locals.adminUser as AdminUser;
   const [markerStats] = await db
     .select({
       total: sql<number>`count(*)::int`,
@@ -17,13 +18,15 @@ router.get("/stats", async (_req, res): Promise<void> => {
       expired: sql<number>`count(*) filter (where expires_at IS NOT NULL AND expires_at <= now())::int`,
     })
     .from(markersTable)
-    .where(isNull(markersTable.archivedAt));
+    .where(and(isNull(markersTable.archivedAt), eq(markersTable.ownerUserId, admin.id)));
 
   const [redemptionStats] = await db
     .select({
       total: sql<number>`count(*)::int`,
     })
-    .from(redemptionsTable);
+    .from(redemptionsTable)
+    .innerJoin(markersTable, eq(redemptionsTable.markerId, markersTable.id))
+    .where(eq(markersTable.ownerUserId, admin.id));
 
   res.json({
     totalMarkers: markerStats?.total ?? 0,

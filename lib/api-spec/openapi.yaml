@@ -307,6 +307,9 @@ components:
         guestToken:
           type: string
           description: Optional, legacy browser identifier. Server no longer uses it for timer logic (the marker timer is shared across all guests once activated).
+        tenantSlug:
+          type: string
+          description: Owner map slug required for tenant-specific game pages.
       required:
         - code
 
@@ -319,6 +322,10 @@ components:
           type: string
         role:
           type: string
+        slug:
+          type: string
+        pinBalance:
+          type: integer
       required:
         - id
         - name

@@ -1,9 +1,11 @@
-import { pgTable, serial, text, doublePrecision, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, doublePrecision, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./users";
 
 export const markersTable = pgTable("markers", {
   id: serial("id").primaryKey(),
+  ownerUserId: integer("owner_user_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
   code: text("code").notNull().unique(),

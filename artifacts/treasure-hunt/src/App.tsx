@@ -45,9 +45,10 @@ function getAutoTheme(): "light" | "dark" {
 }
 
 function MainApp() {
+  const tenantSlug = window.location.pathname.split("/").filter(Boolean)[0]?.toLowerCase();
   const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
-  const [user, setUser] = useState<{ id: number; name: string; role: string } | null>(
-    layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin" } : null,
+  const [user, setUser] = useState<{ id: number; name: string; role: string; pinBalance?: number } | null>(
+    layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", pinBalance: 10 } : null,
   );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
   const [hydrating, setHydrating] = useState(!layoutPreview);
@@ -100,7 +101,7 @@ function MainApp() {
           headers: { Accept: "application/json" },
         });
         if (response.ok) {
-          const admin = await response.json() as { id: number; name: string; role: string };
+          const admin = await response.json() as { id: number; name: string; role: string; pinBalance?: number };
           if (mounted) setUser(admin);
           localStorage.removeItem(GUEST_SESSION_KEY);
           return;
@@ -114,7 +115,7 @@ function MainApp() {
       try {
         const { code } = JSON.parse(saved) as { code: string };
         const guestToken = getOrCreateGuestToken();
-        const guest = await guestLogin({ code, guestToken });
+        const guest = await guestLogin({ code, guestToken, tenantSlug });
         if (mounted) setGuestData(guest);
       } catch {
         localStorage.removeItem(GUEST_SESSION_KEY);
@@ -127,7 +128,7 @@ function MainApp() {
     return () => { mounted = false; };
   }, [layoutPreview, termsAccepted]);
 
-  const handleAdminLogin = (data: { id: number; name: string; role: string }) => {
+  const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number }) => {
     setUser(data);
     setLoginMsg(`Witaj, ${data.name}!`);
   };
@@ -196,6 +197,7 @@ function MainApp() {
       <AuthScreen
         onLoginAdmin={handleAdminLogin}
         onLoginGuest={handleGuestLogin}
+        tenantSlug={tenantSlug}
         theme={theme}
         onToggleTheme={handleToggleTheme}
       />
@@ -220,6 +222,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={MainApp} />
+      <Route path="/:tenantSlug" component={MainApp} />
       <Route component={NotFound} />
     </Switch>
   );

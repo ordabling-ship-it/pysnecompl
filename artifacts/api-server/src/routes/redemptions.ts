@@ -5,12 +5,14 @@ import {
   CreateRedemptionBody,
   ListRedemptionsQueryParams,
 } from "@workspace/api-zod";
-import { requireAdmin } from "../lib/admin-session";
+import { requireAdmin, type AdminUser } from "../lib/admin-session";
+import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
 router.use(requireAdmin);
 
 router.get("/redemptions", async (req, res): Promise<void> => {
+  const admin = res.locals.adminUser as AdminUser;
   const params = ListRedemptionsQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -29,7 +31,7 @@ router.get("/redemptions", async (req, res): Promise<void> => {
     .innerJoin(markersTable, eq(redemptionsTable.markerId, markersTable.id));
 
   if (params.data.userId != null) {
-    const redemptions = await query.where(eq(redemptionsTable.userId, params.data.userId));
+    const redemptions = await query.where(and(eq(redemptionsTable.userId, params.data.userId), eq(markersTable.ownerUserId, admin.id)));
     res.json(
       redemptions.map((r) => ({
         ...r,
@@ -39,7 +41,7 @@ router.get("/redemptions", async (req, res): Promise<void> => {
     return;
   }
 
-  const redemptions = await query;
+  const redemptions = await query.where(eq(markersTable.ownerUserId, admin.id));
   res.json(
     redemptions.map((r) => ({
       ...r,
@@ -49,6 +51,7 @@ router.get("/redemptions", async (req, res): Promise<void> => {
 });
 
 router.post("/redemptions", async (req, res): Promise<void> => {
+  const admin = res.locals.adminUser as AdminUser;
   const parsed = CreateRedemptionBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -56,6 +59,10 @@ router.post("/redemptions", async (req, res): Promise<void> => {
   }
 
   const { userId, code } = parsed.data;
+  if (userId !== admin.id) {
+    res.status(403).json({ error: "Nie możesz zapisać odkrycia dla innego konta." });
+    return;
+  }
   const upperCode = code.toUpperCase();
 
   const [marker] = await db
@@ -64,6 +71,7 @@ router.post("/redemptions", async (req, res): Promise<void> => {
     .where(and(
       eq(markersTable.code, upperCode),
       isNull(markersTable.archivedAt),
+      eq(markersTable.ownerUserId, admin.id),
     ));
 
   if (!marker) {
@@ -105,6 +113,7 @@ router.post("/redemptions", async (req, res): Promise<void> => {
   }
 
   req.log.info({ userId, markerId: marker.id }, "Code redeemed");
+  await recordAudit("code_redeemed", admin.id, admin.id, { markerId: marker.id, redemptionId: redemption.id });
   res.status(201).json({
     id: redemption.id,
     userId: redemption.userId,

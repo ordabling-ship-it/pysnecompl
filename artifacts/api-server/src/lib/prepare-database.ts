@@ -4,6 +4,40 @@ import { logger } from "./logger";
 import { hashPassword, isPasswordHash } from "./password";
 
 export async function prepareDatabase(): Promise<void> {
+  // Additive multi-tenant/RBAC migration. Existing maps are assigned to the
+  // oldest admin so the first deployment preserves the current account's data.
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS slug text");
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_user_id integer");
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_balance integer NOT NULL DEFAULT 10");
+  await pool.query("ALTER TABLE markers ADD COLUMN IF NOT EXISTS owner_user_id integer");
+  await pool.query(`UPDATE users SET slug = 'konto-' || id WHERE slug IS NULL OR slug = ''`);
+  await pool.query("ALTER TABLE users ALTER COLUMN slug SET NOT NULL");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS users_slug_unique ON users (slug)");
+  await pool.query(`UPDATE markers SET owner_user_id = (
+    SELECT id FROM users WHERE role IN ('admin', 'moderator', 'master_admin') ORDER BY id LIMIT 1
+  ) WHERE owner_user_id IS NULL`);
+  await pool.query("ALTER TABLE markers ALTER COLUMN owner_user_id SET NOT NULL");
+  await pool.query(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'markers_owner_user_id_fkey') THEN
+      ALTER TABLE markers ADD CONSTRAINT markers_owner_user_id_fkey
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_pin_balance_nonnegative') THEN
+      ALTER TABLE users ADD CONSTRAINT users_pin_balance_nonnegative CHECK (pin_balance >= 0);
+    END IF;
+  END $$`);
+  await pool.query("CREATE INDEX IF NOT EXISTS markers_owner_user_id_idx ON markers (owner_user_id)");
+  await pool.query(`CREATE TABLE IF NOT EXISTS audit_logs (
+    id serial PRIMARY KEY,
+    actor_user_id integer,
+    tenant_user_id integer,
+    event_type text NOT NULL,
+    details jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_tenant_user_id_idx ON audit_logs (tenant_user_id)");
+
   await pool.query(
     "ALTER TABLE markers ADD COLUMN IF NOT EXISTS archived_at timestamptz",
   );

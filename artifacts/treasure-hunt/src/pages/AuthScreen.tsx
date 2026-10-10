@@ -9,13 +9,14 @@ import { Loader2, Key, User, ArrowLeft, Coins, AlertCircle, Sun, Moon } from "lu
 import { getOrCreateGuestToken, type GuestData } from "@/App";
 
 type AuthScreenProps = {
-  onLoginAdmin: (user: { id: number; name: string; role: string }) => void;
+  onLoginAdmin: (user: { id: number; name: string; role: string; pinBalance?: number }) => void;
   onLoginGuest: (guestData: GuestData) => void;
+  tenantSlug?: string;
   theme: "light" | "dark";
   onToggleTheme: () => void;
 };
 
-export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggleTheme }: AuthScreenProps) {
+export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggleTheme, tenantSlug }: AuthScreenProps) {
   const [view, setView] = useState<"guest" | "admin">("guest");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
@@ -31,7 +32,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
     if (!code) return;
     const guestToken = getOrCreateGuestToken();
     guestLogin.mutate(
-      { data: { code: code.toUpperCase(), guestToken } },
+      { data: { code: code.toUpperCase(), guestToken, tenantSlug } },
       {
         onSuccess: (data) => {
           onLoginGuest(data);

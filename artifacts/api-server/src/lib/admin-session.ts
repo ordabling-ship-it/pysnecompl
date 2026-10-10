@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 import { logger } from "./logger";
 
@@ -28,7 +28,12 @@ export type AdminUser = {
   id: number;
   name: string;
   role: string;
+  slug: string;
+  parentUserId: number | null;
+  pinBalance: number;
 };
+
+const ADMIN_ROLES = ["admin", "moderator", "master_admin"] as const;
 
 function sign(value: string): Buffer {
   return createHmac("sha256", signingSecret).update(value).digest();
@@ -97,9 +102,9 @@ export async function getAuthenticatedAdmin(req: Request): Promise<AdminUser | n
   if (!payload) return null;
 
   const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, role: usersTable.role })
+    .select({ id: usersTable.id, name: usersTable.name, role: usersTable.role, slug: usersTable.slug, parentUserId: usersTable.parentUserId, pinBalance: usersTable.pinBalance })
     .from(usersTable)
-    .where(and(eq(usersTable.id, payload.sub), eq(usersTable.role, "admin")));
+    .where(and(eq(usersTable.id, payload.sub), inArray(usersTable.role, [...ADMIN_ROLES])));
 
   return user ?? null;
 }
@@ -131,5 +136,20 @@ export async function requireAdmin(
     return;
   }
 
+  res.locals.adminUser = user;
+
   next();
+}
+
+export function requireRole(...roles: string[]) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    await requireAdmin(req, res, () => {
+      const user = res.locals.adminUser as AdminUser | undefined;
+      if (!user || !roles.includes(user.role)) {
+        res.status(403).json({ error: "Brak uprawnień do tej funkcji." });
+        return;
+      }
+      next();
+    });
+  };
 }

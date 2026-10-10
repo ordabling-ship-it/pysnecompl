@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, isNull } from "drizzle-orm";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { eq, and, isNull, or, inArray } from "drizzle-orm";
 import { db, usersTable, markersTable } from "@workspace/db";
 import {
   AdminLoginBody,
@@ -10,7 +11,8 @@ import {
   getAuthenticatedAdmin,
   setAdminSession,
 } from "../lib/admin-session";
-import { verifyPassword } from "../lib/password";
+import { hashPassword, verifyPassword } from "../lib/password";
+import { recordAudit } from "../lib/audit";
 
 const router: IRouter = Router();
 
@@ -18,6 +20,34 @@ const router: IRouter = Router();
 // The timer is started ONLY by the first guest who enters a valid code
 // (see guest-login below) — never by admin creation, never automatically.
 const CODE_TTL_MS = 60 * 60 * 1000;
+const loginAttempts = new Map<string, { failures: number; windowStartedAt: number; blockedUntil: number }>();
+const dummyHash = hashPassword(randomBytes(32).toString("hex"));
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_BLOCK_MS = 15 * 60 * 1000;
+
+function loginKey(ip: string | undefined, username: string): string {
+  return `${ip ?? "unknown"}:${username.toLowerCase()}`;
+}
+
+function isLoginBlocked(key: string, now: number): boolean {
+  const attempt = loginAttempts.get(key);
+  if (!attempt) return false;
+  if (attempt.blockedUntil > now) return true;
+  if (now - attempt.windowStartedAt > LOGIN_WINDOW_MS) loginAttempts.delete(key);
+  return false;
+}
+
+function noteLoginFailure(key: string, now: number): void {
+  if (loginAttempts.size > 5000) {
+    for (const [savedKey, value] of loginAttempts) if (now - value.windowStartedAt > LOGIN_WINDOW_MS) loginAttempts.delete(savedKey);
+  }
+  const current = loginAttempts.get(key);
+  const next = !current || now - current.windowStartedAt > LOGIN_WINDOW_MS
+    ? { failures: 1, windowStartedAt: now, blockedUntil: 0 }
+    : { ...current, failures: current.failures + 1 };
+  if (next.failures >= 5) next.blockedUntil = now + LOGIN_BLOCK_MS;
+  loginAttempts.set(key, next);
+}
 
 router.post("/auth/admin-login", async (req, res): Promise<void> => {
   const parsed = AdminLoginBody.safeParse(req.body);
@@ -27,6 +57,13 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
   }
 
   const { username, password } = parsed.data;
+  const now = Date.now();
+  const attemptKey = loginKey(req.ip, username);
+  if (isLoginBlocked(attemptKey, now)) {
+    res.setHeader("Retry-After", String(LOGIN_BLOCK_MS / 1000));
+    res.status(429).json({ error: "Zbyt wiele prób logowania. Spróbuj ponownie za 15 minut." });
+    return;
+  }
 
   if (username.length > 254 || password.length > 1024) {
     res.status(401).json({ error: "Nieprawidłowe dane administratora." });
@@ -36,22 +73,76 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
   const [user] = await db
     .select()
     .from(usersTable)
-    .where(eq(usersTable.role, "admin"));
+    .where(and(
+      inArray(usersTable.role, ["admin", "moderator", "master_admin"]),
+      or(eq(usersTable.name, username), eq(usersTable.slug, username), eq(usersTable.email, username)),
+    ));
 
-  if (!user || (user.name !== username && user.email !== username)) {
+  if (!user) {
+    await verifyPassword(password, await dummyHash);
+    noteLoginFailure(attemptKey, now);
     res.status(401).json({ error: "Nieprawidłowe dane administratora." });
     return;
   }
 
   if (!(await verifyPassword(password, user.passwordHash))) {
+    noteLoginFailure(attemptKey, now);
     res.status(401).json({ error: "Nieprawidłowe dane administratora." });
     return;
   }
 
+  loginAttempts.delete(attemptKey);
+
   req.log.info({ userId: user.id }, "Admin logged in");
+  await recordAudit("admin_login", user.id, user.id, {});
   res.setHeader("Cache-Control", "no-store");
   setAdminSession(res, user.id);
-  res.json({ id: user.id, name: user.name, role: user.role });
+  res.json({ id: user.id, name: user.name, role: user.role, slug: user.slug, pinBalance: user.pinBalance });
+});
+
+// One-time bootstrap: enabled only when an operator has configured a secret in
+// the hosting provider. Once the master account exists, this endpoint is closed.
+router.post("/auth/bootstrap-master", async (req, res): Promise<void> => {
+  const secret = process.env.MASTER_BOOTSTRAP_SECRET;
+  const { secret: supplied, masterPassword, moderatorPassword } = req.body ?? {};
+  const expectedBytes = Buffer.from(secret ?? "");
+  const suppliedBytes = typeof supplied === "string" ? Buffer.from(supplied) : Buffer.alloc(0);
+  if (!secret || suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) {
+    res.status(404).json({ error: "Nie znaleziono." });
+    return;
+  }
+  const origin = req.get("origin");
+  if (process.env.NODE_ENV === "production" && (!origin || origin !== `${req.protocol}://${req.get("host")}`)) {
+    res.status(403).json({ error: "Żądanie pochodzi z niedozwolonego źródła." });
+    return;
+  }
+  if (typeof masterPassword !== "string" || masterPassword.length < 15 || masterPassword.length > 1024 ||
+      typeof moderatorPassword !== "string" || moderatorPassword.length < 15 || moderatorPassword.length > 1024) {
+    res.status(400).json({ error: "Oba hasła muszą mieć co najmniej 15 znaków." });
+    return;
+  }
+  const accounts = await db.transaction(async (tx) => {
+    const [existing] = await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.role, "master_admin")).limit(1);
+    if (existing) return null;
+    const [master] = await tx.insert(usersTable).values({
+      name: "don_hudinni", slug: "don_hudinni", email: "don_hudinni@accounts.pysne.invalid",
+      passwordHash: await hashPassword(masterPassword), role: "master_admin", pinBalance: 10,
+    }).returning({ id: usersTable.id, name: usersTable.name, role: usersTable.role });
+    const [moderator] = await tx.insert(usersTable).values({
+      name: "don_lisciasty", slug: "don_lisciasty", email: "don_lisciasty@accounts.pysne.invalid",
+      passwordHash: await hashPassword(moderatorPassword), role: "moderator", parentUserId: master.id, pinBalance: 10,
+    }).returning({ id: usersTable.id, name: usersTable.name, role: usersTable.role });
+    return { master, moderator };
+  });
+  if (!accounts) {
+    res.status(409).json({ error: "Konto głównego administratora już istnieje." });
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  await recordAudit("master_bootstrapped", accounts.master.id, accounts.master.id, { username: accounts.master.name });
+  await recordAudit("moderator_created", accounts.master.id, accounts.moderator.id, { username: accounts.moderator.name });
+  setAdminSession(res, accounts.master.id);
+  res.status(201).json({ ...accounts.master, slug: "don_hudinni", pinBalance: 10 });
 });
 
 router.get("/auth/session", async (req, res): Promise<void> => {
@@ -90,6 +181,22 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     return;
   }
 
+  if (parsed.data.tenantSlug) {
+    const [owner] = await db.select({ slug: usersTable.slug })
+      .from(usersTable).where(eq(usersTable.id, marker.ownerUserId));
+    if (!owner || owner.slug !== parsed.data.tenantSlug.toLowerCase()) {
+      res.status(404).json({ error: "Ten kod nie należy do tej mapy." });
+      return;
+    }
+  } else {
+    const [defaultTenant] = await db.select({ id: usersTable.id })
+      .from(usersTable).where(eq(usersTable.role, "admin")).orderBy(usersTable.id).limit(1);
+    if (!defaultTenant || marker.ownerUserId !== defaultTenant.id) {
+      res.status(404).json({ error: "Otwórz adres swojej mapy, aby wejść do tej gry." });
+      return;
+    }
+  }
+
   // Block reads of an already-expired code. Markers with expiresAt === null
   // have NOT been activated yet — those are still redeemable.
   if (marker.expiresAt && new Date() > new Date(marker.expiresAt)) {
@@ -114,6 +221,7 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     if (activated?.expiresAt) {
       activeExpiresAt = activated.expiresAt;
       req.log.info({ markerId: marker.id, expiresAt: activeExpiresAt }, "Code timer activated by first guest");
+      await recordAudit("treasure_activated", null, marker.ownerUserId, { markerId: marker.id, code: marker.code });
     } else {
       const [fresh] = await db.select().from(markersTable).where(eq(markersTable.id, marker.id));
       if (!fresh?.expiresAt) {

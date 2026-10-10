@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Pierwsze konta administratorów · Pysne</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,sans-serif;color:#173b2b;background:#f5f7f2}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}.panel{width:min(100%,520px);background:#fff;border:1px solid #dce5dc;border-radius:18px;padding:30px}h1{font-size:25px;margin:0 0 10px}p{line-height:1.55;color:#526558}label{display:block;margin-top:17px;font-size:13px;font-weight:650}input{width:100%;height:44px;margin-top:7px;padding:0 12px;border:1px solid #cbd7cc;border-radius:9px;font:inherit}button{width:100%;margin-top:22px;padding:13px;border:0;border-radius:9px;background:#286342;color:#fff;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.6}#message{min-height:24px;margin-top:14px;font-size:14px}small{display:block;margin-top:6px;color:#627469}
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>Pierwsze konta administratorów</h1>
+    <p>Jednorazowe utworzenie kont <strong>don_hudinni</strong> (master admin) i <strong>don_lisciasty</strong> (moderator). Hasła nie są zapisywane w przeglądarce; serwer przechowuje wyłącznie ich skróty.</p>
+    <form id="setup">
+      <label for="secret">Jednorazowy klucz konfiguracji</label>
+      <input id="secret" type="password" required autocomplete="off">
+      <label for="master-password">Hasło master admina</label>
+      <input id="master-password" type="password" required minlength="15" maxlength="128" autocomplete="new-password">
+      <small>Co najmniej 15 znaków. Użyj unikatowego hasła z menedżera haseł.</small>
+      <label for="moderator-password">Hasło moderatora</label>
+      <input id="moderator-password" type="password" required minlength="15" maxlength="128" autocomplete="new-password">
+      <small>Co najmniej 15 znaków. Użyj innego hasła niż dla master admina.</small>
+      <button id="submit" type="submit">Utwórz oba konta</button>
+      <div id="message" role="status" aria-live="polite"></div>
+    </form>
+  </main>
+  <script>
+    const form=document.getElementById('setup');
+    form.addEventListener('submit',async(event)=>{
+      event.preventDefault();
+      const button=document.getElementById('submit');
+      const message=document.getElementById('message');
+      button.disabled=true;message.textContent='Tworzenie kont…';
+      try{
+        const response=await fetch('/api/auth/bootstrap-master',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({secret:document.getElementById('secret').value,masterPassword:document.getElementById('master-password').value,moderatorPassword:document.getElementById('moderator-password').value})});
+        const result=await response.json();
+        if(!response.ok)throw new Error(result.error||'Nie udało się utworzyć kont.');
+        form.reset();message.textContent='Konta utworzone. Otwieram aplikację…';
+        window.location.replace('/');
+      }catch(error){message.textContent=error instanceof Error?error.message:'Wystąpił błąd.';button.disabled=false;}
+    });
+  </script>
+</body>
+</html>

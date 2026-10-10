@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { sql, gte, isNotNull, and, desc, eq, isNull } from "drizzle-orm";
 import { db, markersTable, settingsTable } from "@workspace/db";
-import { requireAdmin } from "../lib/admin-session";
+import { requireAdmin, requireRole, type AdminUser } from "../lib/admin-session";
 
 const router: IRouter = Router();
 router.use(requireAdmin);
@@ -26,6 +26,7 @@ async function getSettings() {
 }
 
 router.get("/discoveries", async (_req, res): Promise<void> => {
+  const admin = res.locals.adminUser as AdminUser;
   const settings = await getSettings();
   const since = settings.discoveriesResetAt;
 
@@ -35,6 +36,7 @@ router.get("/discoveries", async (_req, res): Promise<void> => {
     .from(markersTable)
     .where(and(
       isNull(markersTable.archivedAt),
+      eq(markersTable.ownerUserId, admin.id),
       isNotNull(markersTable.activatedAt),
       gte(markersTable.activatedAt, since),
     ));
@@ -45,6 +47,7 @@ router.get("/discoveries", async (_req, res): Promise<void> => {
     .from(markersTable)
     .where(and(
       isNull(markersTable.archivedAt),
+      eq(markersTable.ownerUserId, admin.id),
       isNotNull(markersTable.activatedAt),
       gte(markersTable.activatedAt, since),
     ))
@@ -61,7 +64,7 @@ router.get("/discoveries", async (_req, res): Promise<void> => {
   });
 });
 
-router.post("/discoveries/reset", async (req, res): Promise<void> => {
+router.post("/discoveries/reset", requireRole("master_admin"), async (req, res): Promise<void> => {
   await getSettings();
   const now = new Date();
   // Hard-scope the update to the singleton row.

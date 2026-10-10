@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
+import { randomInt } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { db, markersTable, redemptionsTable } from "@workspace/db";
-import { requireAdmin } from "../lib/admin-session";
+import { db, markersTable, redemptionsTable, usersTable } from "@workspace/db";
+import { requireAdmin, type AdminUser } from "../lib/admin-session";
+import { recordAudit } from "../lib/audit";
 import {
   CreateMarkerBody,
   GetMarkerParams,
@@ -26,7 +28,8 @@ function isAllowedImageUrl(value: string): boolean {
 }
 
 function genCode(): string {
-  return Math.random().toString(36).substring(2, 7).toUpperCase();
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 5 }, () => alphabet[randomInt(alphabet.length)]).join("");
 }
 
 function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, count: number) {
@@ -47,11 +50,12 @@ function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, cou
 }
 
 router.get("/markers", requireAdmin, async (req, res): Promise<void> => {
+  const admin = res.locals.adminUser as AdminUser;
   // Newest first per spec — sidebar lists most recently created markers at the top.
   const markers = await db
     .select()
     .from(markersTable)
-    .where(isNull(markersTable.archivedAt))
+    .where(and(isNull(markersTable.archivedAt), eq(markersTable.ownerUserId, admin.id)))
     .orderBy(sql`${markersTable.createdAt} DESC`);
 
   const counts = await db
@@ -77,6 +81,7 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
   }
 
   const { title, description, lat, lng, imageUrl } = parsed.data;
+  const admin = res.locals.adminUser as AdminUser;
 
   if (
     title.trim().length === 0 || title.length > 160 ||
@@ -89,16 +94,31 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
 
-  const code = genCode();
+  const marker = await db.transaction(async (tx) => {
+    const [charged] = await tx.update(usersTable)
+      .set({ pinBalance: sql`${usersTable.pinBalance} - 1` })
+      .where(and(eq(usersTable.id, admin.id), sql`${usersTable.pinBalance} > 0`))
+      .returning({ id: usersTable.id });
+    if (!charged) return null;
 
-  // IMPORTANT: admin creation does NOT start the timer. expiresAt stays null
-  // until the first guest successfully enters the code (see auth.ts).
-  const [marker] = await db
-    .insert(markersTable)
-    .values({ title, description, lat, lng, imageUrl: imageUrl ?? null, code, expiresAt: null })
-    .returning();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const [created] = await tx.insert(markersTable)
+        .values({ ownerUserId: admin.id, title, description, lat, lng, imageUrl: imageUrl ?? null, code: genCode(), expiresAt: null })
+        .onConflictDoNothing({ target: markersTable.code })
+        .returning();
+      if (created) return created;
+    }
+    await tx.update(usersTable).set({ pinBalance: sql`${usersTable.pinBalance} + 1` }).where(eq(usersTable.id, admin.id));
+    throw new Error("Unable to allocate a unique marker code");
+  });
 
-  req.log.info({ markerId: marker.id, code }, "Marker created");
+  if (!marker) {
+    res.status(402).json({ error: "Wykorzystano wszystkie pinezki. Wybierz pakiet, aby dodać kolejne." });
+    return;
+  }
+
+  req.log.info({ markerId: marker.id, code: marker.code, ownerUserId: admin.id }, "Marker created");
+  await recordAudit("marker_created", admin.id, admin.id, { markerId: marker.id, code: marker.code, title: marker.title });
   res.status(201).json(markerWithRedemptionCount(marker, 0));
 });
 
@@ -119,6 +139,16 @@ router.get("/markers/by-code/:code", async (req, res): Promise<void> => {
 
   if (!marker) {
     res.status(404).json({ error: "Marker not found" });
+    return;
+  }
+
+  const requestedTenant = typeof req.query.tenantSlug === "string" ? req.query.tenantSlug.toLowerCase() : null;
+  const [owner] = await db.select({ id: usersTable.id, slug: usersTable.slug })
+    .from(usersTable).where(eq(usersTable.id, marker.ownerUserId));
+  const defaultTenant = requestedTenant ? undefined : (await db.select({ id: usersTable.id })
+    .from(usersTable).where(eq(usersTable.role, "admin")).orderBy(usersTable.id).limit(1))[0];
+  if (!owner || (requestedTenant ? owner.slug !== requestedTenant : defaultTenant?.id !== owner.id)) {
+    res.status(404).json({ error: "Nie znaleziono znacznika na tej mapie." });
     return;
   }
 
@@ -146,7 +176,7 @@ router.get("/markers/:id", requireAdmin, async (req, res): Promise<void> => {
   const [marker] = await db
     .select()
     .from(markersTable)
-    .where(sql`${markersTable.id} = ${params.data.id} AND ${markersTable.archivedAt} IS NULL`);
+    .where(and(eq(markersTable.id, params.data.id), eq(markersTable.ownerUserId, (res.locals.adminUser as AdminUser).id), isNull(markersTable.archivedAt)));
 
   if (!marker) {
     res.status(404).json({ error: "Marker not found" });
@@ -171,7 +201,7 @@ router.delete("/markers/:id", requireAdmin, async (req, res): Promise<void> => {
   const [marker] = await db
     .update(markersTable)
     .set({ archivedAt: new Date() })
-    .where(sql`${markersTable.id} = ${params.data.id} AND ${markersTable.archivedAt} IS NULL`)
+    .where(and(eq(markersTable.id, params.data.id), eq(markersTable.ownerUserId, (res.locals.adminUser as AdminUser).id), isNull(markersTable.archivedAt)))
     .returning();
 
   if (!marker) {
@@ -180,6 +210,7 @@ router.delete("/markers/:id", requireAdmin, async (req, res): Promise<void> => {
   }
 
   req.log.info({ markerId: params.data.id }, "Marker archived");
+  await recordAudit("marker_archived", (res.locals.adminUser as AdminUser).id, marker.ownerUserId, { markerId: marker.id, title: marker.title });
   res.sendStatus(204);
 });
 
