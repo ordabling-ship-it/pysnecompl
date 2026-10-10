@@ -49,6 +49,13 @@ const createIcon = (html: string) => L.divIcon({
   popupAnchor: [0, -32],
 });
 
+const CREATOR_PIN_PACKAGES = [
+  { name: "Mały", amount: 50, price: 249 },
+  { name: "Średni", amount: 100, price: 449 },
+  { name: "Duży", amount: 250, price: 849 },
+] as const;
+const BUYCOFFEE_URL = "https://buycoffee.to/czosnek";
+
 // ─────────────────────────────────────────────
 // Image compression: resize to max 800×600, then
 // iteratively reduce JPEG quality until under 1 MB.
@@ -400,7 +407,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       if (!response.ok) throw new Error(result.error ?? "Nie udało się utworzyć konta.");
       setAccountName(""); setAccountPassword("");
       await loadManagedUsers();
-      toast({ title: "Konto utworzone", description: `Mapa: ${window.location.origin}/${result.slug} · saldo początkowe: 10 pinezek.` });
+      toast({
+        title: "Konto utworzone",
+        description: `Mapa: ${window.location.origin}/${result.slug} · ${result.role === "moderator" ? "brak limitu pinezek" : "saldo początkowe: 10 pinezek"}.`,
+      });
     } catch (error) {
       setAccountError(error instanceof Error ? error.message : "Nie udało się utworzyć konta.");
     } finally {
@@ -499,6 +509,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const queryClient = useQueryClient();
 
   const isAdmin = user?.role === "admin" || user?.role === "moderator" || user?.role === "master_admin";
+  const isCreator = user?.role === "admin";
+  const hasUnlimitedPins = user?.role === "master_admin" || user?.role === "moderator";
   const previewMarkers = useMemo<Marker[]>(() => {
     const now = Date.now();
     return [
@@ -712,7 +724,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         onSuccess: async (created) => {
           queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetStatsQueryKey() });
-          setPinBalance((balance) => balance == null ? balance : Math.max(0, balance - 1));
+          if (isCreator) setPinBalance((balance) => balance == null ? balance : Math.max(0, balance - 1));
           showSaved();
           const ok = await copyToClipboard(created.code);
           toast({
@@ -1013,26 +1025,28 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
               <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
 
-                <a
-                  href="/cennik.html"
-                  className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-center text-sm font-semibold text-green-900 hover:bg-green-100 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200 dark:hover:bg-green-950/70"
-                >
-                  Cennik konta administratora
-                </a>
-                <a
-                  href="https://buycoffee.to/czosnek"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
-                >
-                  Wesprzyj rozwój Pysne · BuyCoffee
-                  <span className="mt-1 block text-[11px] font-normal">Dobrowolne wsparcie nie dodaje pinezek ani nie aktywuje abonamentu.</span>
-                </a>
+                {isCreator && (
+                  <section aria-label="Pakiety pinezek dla Kreatorów" className="rounded-xl border border-green-200 bg-green-50 p-3 text-green-950 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
+                    <h2 className="text-sm font-semibold">Pakiety pinezek dla Kreatorów</h2>
+                    <p className="mt-1 text-xs">Wybierz pakiet i przejdź do BuyCoffee.</p>
+                    <div className="mt-2 space-y-1">
+                      {CREATOR_PIN_PACKAGES.map((pack) => (
+                        <a key={pack.name} href={BUYCOFFEE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-lg border border-green-200 bg-white px-2.5 py-2 text-xs hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:hover:bg-green-950/70">
+                          <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł ↗</strong>
+                        </a>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[11px] leading-4">W dedykacji na BuyCoffee wpisz login i nazwę pakietu. Po potwierdzeniu wpłaty pinezki dodamy ręcznie.</p>
+                  </section>
+                )}
 
                 {user && !layoutPreview && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-                    Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong>
-                    <span className="block text-xs">Każdy nowy skarb zużywa 1 pinezkę. Pakiety są na stronie cennika.</span>
+                    {hasUnlimitedPins ? (
+                      <>Pinezki: <strong>bez limitu</strong></>
+                    ) : (
+                      <>Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong><span className="block text-xs">Każdy nowy skarb zużywa 1 pinezkę. Po wykorzystaniu puli możesz wybrać pakiet BuyCoffee.</span></>
+                    )}
                   </div>
                 )}
 
@@ -1066,7 +1080,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                         <div key={managed.id} className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-900">
                           <div className="flex items-center justify-between gap-2 font-semibold">
                             <span>{managed.name} <span className="font-normal text-gray-500">· {managed.role === "admin" ? "Kreator" : managed.role === "moderator" ? "Moderator" : managed.role}</span></span>
-                            <span>{managed.pinBalance} pinezek</span>
+                            <span>{managed.role === "master_admin" || managed.role === "moderator" ? "Bez limitu pinezek" : `${managed.pinBalance} pinezek`}</span>
                           </div>
                           <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>
                           <a className="mt-1 inline-block text-green-800 underline dark:text-green-300" href={`/${managed.slug}`} target="_blank" rel="noreferrer">Otwórz mapę · /{managed.slug}</a>
@@ -1531,17 +1545,17 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       <Dialog open={pinPurchaseOpen} onOpenChange={setPinPurchaseOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-green-900 dark:text-green-200">Wykorzystano darmowe pinezki</DialogTitle>
+            <DialogTitle className="text-green-900 dark:text-green-200">Pakiety pinezek dla Kreatorów</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Możesz dokupić jedną z trzech pul. Wybierz pakiet, żeby zobaczyć szczegóły.</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet i przejdź do BuyCoffee. W dedykacji wpisz login oraz nazwę pakietu; po potwierdzeniu wpłaty pinezki dodamy ręcznie.</p>
           <div className="space-y-2">
-            {[{ name: "Mały", amount: 50, price: 249 }, { name: "Średni", amount: 100, price: 449 }, { name: "Duży", amount: 250, price: 849 }].map((pack) => (
-              <a key={pack.name} href="/cennik.html#pakiety" className="flex items-center justify-between rounded-lg border border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
-                <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł</strong>
+            {CREATOR_PIN_PACKAGES.map((pack) => (
+              <a key={pack.name} href={BUYCOFFEE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-lg border border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
+                <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł · BuyCoffee ↗</strong>
               </a>
             ))}
           </div>
-          <p className="text-xs text-amber-800 dark:text-amber-300">Zakupów online jeszcze nie włączono. Cennik pokazuje ceny, ale nie pobiera płatności ani nie dodaje pinezek.</p>
+          <p className="text-xs text-amber-800 dark:text-amber-300">Płatność nie dodaje pinezek automatycznie. Saldo uzupełnimy po potwierdzeniu wpłaty.</p>
         </DialogContent>
       </Dialog>
     </div>

@@ -127,7 +127,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                   Panel administratora
                 </Button>
                 <a href="/cennik.html" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
-                  Cennik konta administratora
+                  Cennik dla Kreatorów
                 </a>
               </CardFooter>
             </form>
@@ -188,7 +188,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                   Zaloguj jako admin
                 </Button>
                 <a href="/cennik.html" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
-                  Cennik konta administratora
+                  Cennik dla Kreatorów
                 </a>
               </CardFooter>
             </form>

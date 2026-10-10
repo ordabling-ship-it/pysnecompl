@@ -82,6 +82,7 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
 
   const { title, description, lat, lng, imageUrl } = parsed.data;
   const admin = res.locals.adminUser as AdminUser;
+  const hasUnlimitedPins = admin.role === "master_admin" || admin.role === "moderator";
 
   if (
     title.trim().length === 0 || title.length > 160 ||
@@ -95,11 +96,13 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
   }
 
   const marker = await db.transaction(async (tx) => {
-    const [charged] = await tx.update(usersTable)
-      .set({ pinBalance: sql`${usersTable.pinBalance} - 1` })
-      .where(and(eq(usersTable.id, admin.id), sql`${usersTable.pinBalance} > 0`))
-      .returning({ id: usersTable.id });
-    if (!charged) return null;
+    if (!hasUnlimitedPins) {
+      const [charged] = await tx.update(usersTable)
+        .set({ pinBalance: sql`${usersTable.pinBalance} - 1` })
+        .where(and(eq(usersTable.id, admin.id), sql`${usersTable.pinBalance} > 0`))
+        .returning({ id: usersTable.id });
+      if (!charged) return null;
+    }
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const [created] = await tx.insert(markersTable)
@@ -108,7 +111,9 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
         .returning();
       if (created) return created;
     }
-    await tx.update(usersTable).set({ pinBalance: sql`${usersTable.pinBalance} + 1` }).where(eq(usersTable.id, admin.id));
+    if (!hasUnlimitedPins) {
+      await tx.update(usersTable).set({ pinBalance: sql`${usersTable.pinBalance} + 1` }).where(eq(usersTable.id, admin.id));
+    }
     throw new Error("Unable to allocate a unique marker code");
   });
 
