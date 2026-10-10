@@ -1535,7 +1535,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           </DialogHeader>
           <p className="text-sm text-gray-600 dark:text-gray-300">Możesz dokupić jedną z trzech pul. Wybierz pakiet, żeby zobaczyć szczegóły.</p>
           <div className="space-y-2">
-            {[{ name: "Mały", amount: 25, price: 29 }, { name: "Średni", amount: 100, price: 99 }, { name: "Duży", amount: 300, price: 249 }].map((pack) => (
+            {[{ name: "Mały", amount: 50, price: 249 }, { name: "Średni", amount: 100, price: 449 }, { name: "Duży", amount: 250, price: 849 }].map((pack) => (
               <a key={pack.name} href="/cennik.html#pakiety" className="flex items-center justify-between rounded-lg border border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
                 <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł</strong>
               </a>
