@@ -66,6 +66,32 @@ router.post("/control/users", requireRole(...MANAGER_ROLES), async (req, res): P
   res.status(201).json(user);
 });
 
+router.patch("/control/users/:userId/password", requireRole("master_admin"), async (req, res): Promise<void> => {
+  const actor = res.locals.adminUser as AdminUser;
+  const userId = Number(req.params.userId);
+  const { password } = req.body ?? {};
+  if (!Number.isSafeInteger(userId) || userId < 1) {
+    res.status(400).json({ error: "Nieprawidłowe konto." });
+    return;
+  }
+  if (typeof password !== "string" || password.length < 15 || password.length > 128) {
+    res.status(400).json({ error: "Hasło musi mieć od 15 do 128 znaków." });
+    return;
+  }
+  const [target] = await db.select({ id: usersTable.id, name: usersTable.name, role: usersTable.role })
+    .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!target || !["admin", "moderator"].includes(target.role)) {
+    res.status(404).json({ error: "Nie znaleziono konta do zmiany hasła." });
+    return;
+  }
+
+  await db.update(usersTable).set({ passwordHash: await hashPassword(password) }).where(eq(usersTable.id, target.id));
+  req.log.info({ userId: target.id, actorId: actor.id }, "Managed account password reset");
+  await recordAudit("account_password_reset", actor.id, target.id, { username: target.name });
+  res.setHeader("Cache-Control", "no-store");
+  res.sendStatus(204);
+});
+
 router.get("/control/overview", requireRole("master_admin"), async (_req, res): Promise<void> => {
   const [counts] = await db.select({
     accounts: sql<number>`count(distinct ${usersTable.id})::int`,

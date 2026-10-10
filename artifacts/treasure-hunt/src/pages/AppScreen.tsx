@@ -372,6 +372,11 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const [accountRole, setAccountRole] = useState("admin");
   const [accountError, setAccountError] = useState<string | null>(null);
   const [accountBusy, setAccountBusy] = useState(false);
+  const [passwordResetTargetId, setPasswordResetTargetId] = useState<number | null>(null);
+  const [passwordResetValue, setPasswordResetValue] = useState("");
+  const [passwordResetConfirm, setPasswordResetConfirm] = useState("");
+  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
+  const [passwordResetBusy, setPasswordResetBusy] = useState(false);
   const canManageAccounts = user?.role === "moderator" || user?.role === "master_admin";
   const loadManagedUsers = async () => {
     const response = await fetch("/api/control/users", { credentials: "same-origin", headers: { Accept: "application/json" } });
@@ -400,6 +405,32 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       setAccountError(error instanceof Error ? error.message : "Nie udało się utworzyć konta.");
     } finally {
       setAccountBusy(false);
+    }
+  };
+  const handleResetManagedPassword = async (event: React.FormEvent, targetId: number, targetName: string) => {
+    event.preventDefault();
+    setPasswordResetError(null);
+    if (passwordResetValue !== passwordResetConfirm) {
+      setPasswordResetError("Hasła nie są takie same.");
+      return;
+    }
+    setPasswordResetBusy(true);
+    try {
+      const response = await fetch(`/api/control/users/${targetId}/password`, {
+        method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ password: passwordResetValue }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error ?? "Nie udało się zmienić hasła.");
+      }
+      setPasswordResetTargetId(null); setPasswordResetValue(""); setPasswordResetConfirm("");
+      await loadManagedUsers();
+      toast({ title: "Hasło zmienione", description: `Nowe hasło dla ${targetName} zostało zapisane.` });
+    } catch (error) {
+      setPasswordResetError(error instanceof Error ? error.message : "Nie udało się zmienić hasła.");
+    } finally {
+      setPasswordResetBusy(false);
     }
   };
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -1039,6 +1070,25 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                           </div>
                           <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>
                           <a className="mt-1 inline-block text-green-800 underline dark:text-green-300" href={`/${managed.slug}`} target="_blank" rel="noreferrer">Otwórz mapę · /{managed.slug}</a>
+                          {user?.role === "master_admin" && managed.role !== "master_admin" && (
+                            passwordResetTargetId === managed.id ? (
+                              <form onSubmit={(event) => handleResetManagedPassword(event, managed.id, managed.name)} className="mt-2 space-y-2 rounded-md border border-green-200 p-2 dark:border-green-900">
+                                <label className="block text-xs font-medium">Nowe hasło (min. 15 znaków)
+                                  <Input required minLength={15} maxLength={128} type="password" value={passwordResetValue} onChange={(event) => setPasswordResetValue(event.target.value)} className="mt-1 h-9" autoComplete="new-password" />
+                                </label>
+                                <label className="block text-xs font-medium">Powtórz nowe hasło
+                                  <Input required minLength={15} maxLength={128} type="password" value={passwordResetConfirm} onChange={(event) => setPasswordResetConfirm(event.target.value)} className="mt-1 h-9" autoComplete="new-password" />
+                                </label>
+                                {passwordResetError && <p role="alert" className="text-xs text-red-700 dark:text-red-300">{passwordResetError}</p>}
+                                <div className="flex gap-2">
+                                  <Button type="submit" disabled={passwordResetBusy} className="flex-1 bg-green-700 hover:bg-green-800">{passwordResetBusy ? "Zapisywanie…" : "Zapisz hasło"}</Button>
+                                  <Button type="button" variant="outline" disabled={passwordResetBusy} onClick={() => { setPasswordResetTargetId(null); setPasswordResetValue(""); setPasswordResetConfirm(""); setPasswordResetError(null); }}>Anuluj</Button>
+                                </div>
+                              </form>
+                            ) : (
+                              <Button type="button" variant="outline" className="mt-2 w-full" onClick={() => { setPasswordResetTargetId(managed.id); setPasswordResetError(null); }}>Ustaw nowe hasło</Button>
+                            )
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1047,7 +1097,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       <div className="max-h-56 space-y-2 overflow-y-auto">
                         {managedActivity.map((event) => (
                           <div key={event.id} className="rounded-md bg-gray-50 px-2.5 py-2 text-[11px] dark:bg-gray-900">
-                            <div className="font-semibold">{{ account_created: "Utworzono konto", marker_created: "Dodano skarb", treasure_activated: "Gość rozpoczął grę", code_redeemed: "Odblokowano kod", admin_login: "Logowanie administratora", master_bootstrapped: "Utworzono master admina" }[event.eventType] ?? event.eventType}</div>
+                            <div className="font-semibold">{{ account_created: "Utworzono konto", account_password_reset: "Zmieniono hasło konta", marker_created: "Dodano skarb", treasure_activated: "Gość rozpoczął grę", code_redeemed: "Odblokowano kod", admin_login: "Logowanie administratora", master_bootstrapped: "Utworzono master admina" }[event.eventType] ?? event.eventType}</div>
                             <div className="text-gray-600 dark:text-gray-300">{event.actorName ?? "Gość"}{event.details.username ? ` · ${event.details.username}` : ""} · {new Date(event.createdAt).toLocaleString("pl-PL")}</div>
                           </div>
                         ))}
