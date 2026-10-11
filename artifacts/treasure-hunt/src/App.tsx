@@ -111,6 +111,10 @@ function MainApp() {
         // A missing or expired admin cookie falls through to guest restoration.
       }
 
+      // Analytics is an admin-only destination. Do not restore a guest session
+      // here, because it would hide the normal admin login screen.
+      if (window.location.pathname === "/analytics") return;
+
       const saved = localStorage.getItem(GUEST_SESSION_KEY);
       if (!saved) return;
       try {
@@ -132,14 +136,10 @@ function MainApp() {
   useEffect(() => {
     if (window.location.pathname !== "/analytics" || hydrating) return;
     // Keep the deep link while unauthenticated so the standard login can send
-    // authorized users straight into analytics. Guests and other admins return
-    // to the homepage after their session has been restored.
-    if (!user) {
-      if (guestData) window.history.replaceState({}, "", "/");
-      return;
-    }
+    // authorized users straight into analytics.
+    if (!user) return;
     if (user.id !== 1 && user.id !== 2) window.history.replaceState({}, "", "/");
-  }, [user, guestData, hydrating]);
+  }, [user, hydrating]);
 
   const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number }) => {
     setUser(data);
