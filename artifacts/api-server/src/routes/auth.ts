@@ -97,7 +97,7 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
   await recordAudit("admin_login", user.id, user.id, {});
   res.setHeader("Cache-Control", "no-store");
   setAdminSession(res, user.id);
-  res.json({ id: user.id, name: user.name, role: user.role, slug: user.slug, pinBalance: user.pinBalance });
+  res.json({ id: user.id, name: user.name, role: user.role, slug: user.slug, pinBalance: user.pinBalance, firstPurchaseBonusGranted: user.firstPurchaseBonusGranted });
 });
 
 // One-time bootstrap: enabled only when an operator has configured a secret in

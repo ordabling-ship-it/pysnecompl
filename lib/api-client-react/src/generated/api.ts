@@ -20,9 +20,12 @@ import type {
   AdminLoginBody,
   AuthResponse,
   CreateMarkerBody,
+  CreatePinCheckoutSession201,
+  CreatePinCheckoutSessionBody,
   CreateRedemptionBody,
   Discoveries,
   ErrorResponse,
+  GetPinCheckoutStatus200,
   GuestAuthResponse,
   GuestLoginBody,
   HealthStatus,
@@ -41,6 +44,270 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * @summary Create a Stripe Checkout session for a creator pin package
+ */
+export const getCreatePinCheckoutSessionUrl = () => {
+  return `/api/payments/checkout-session`;
+};
+
+export const createPinCheckoutSession = async (
+  createPinCheckoutSessionBody: CreatePinCheckoutSessionBody,
+  options?: RequestInit,
+): Promise<CreatePinCheckoutSession201> => {
+  return customFetch<CreatePinCheckoutSession201>(
+    getCreatePinCheckoutSessionUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createPinCheckoutSessionBody),
+    },
+  );
+};
+
+export const getCreatePinCheckoutSessionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPinCheckoutSession>>,
+    TError,
+    { data: BodyType<CreatePinCheckoutSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPinCheckoutSession>>,
+  TError,
+  { data: BodyType<CreatePinCheckoutSessionBody> },
+  TContext
+> => {
+  const mutationKey = ["createPinCheckoutSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPinCheckoutSession>>,
+    { data: BodyType<CreatePinCheckoutSessionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createPinCheckoutSession(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePinCheckoutSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPinCheckoutSession>>
+>;
+export type CreatePinCheckoutSessionMutationBody =
+  BodyType<CreatePinCheckoutSessionBody>;
+export type CreatePinCheckoutSessionMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a Stripe Checkout session for a creator pin package
+ */
+export const useCreatePinCheckoutSession = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPinCheckoutSession>>,
+    TError,
+    { data: BodyType<CreatePinCheckoutSessionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPinCheckoutSession>>,
+  TError,
+  { data: BodyType<CreatePinCheckoutSessionBody> },
+  TContext
+> => {
+  return useMutation(getCreatePinCheckoutSessionMutationOptions(options));
+};
+
+/**
+ * @summary Get the status of the signed-in creator's Stripe Checkout session
+ */
+export const getGetPinCheckoutStatusUrl = (sessionId: string) => {
+  return `/api/payments/checkout-session/${sessionId}`;
+};
+
+export const getPinCheckoutStatus = async (
+  sessionId: string,
+  options?: RequestInit,
+): Promise<GetPinCheckoutStatus200> => {
+  return customFetch<GetPinCheckoutStatus200>(
+    getGetPinCheckoutStatusUrl(sessionId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPinCheckoutStatusQueryKey = (sessionId: string) => {
+  return [`/api/payments/checkout-session/${sessionId}`] as const;
+};
+
+export const getGetPinCheckoutStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPinCheckoutStatus>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  sessionId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPinCheckoutStatus>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPinCheckoutStatusQueryKey(sessionId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPinCheckoutStatus>>
+  > = ({ signal }) =>
+    getPinCheckoutStatus(sessionId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!sessionId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPinCheckoutStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPinCheckoutStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPinCheckoutStatus>>
+>;
+export type GetPinCheckoutStatusQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get the status of the signed-in creator's Stripe Checkout session
+ */
+
+export function useGetPinCheckoutStatus<
+  TData = Awaited<ReturnType<typeof getPinCheckoutStatus>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  sessionId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPinCheckoutStatus>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPinCheckoutStatusQueryOptions(sessionId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Signature is verified against the raw request body using STRIPE_WEBHOOK_SECRET.
+ * @summary Receive signed Stripe payment events
+ */
+export const getReceiveStripeWebhookUrl = () => {
+  return `/api/payments/stripe/webhook`;
+};
+
+export const receiveStripeWebhook = async (
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getReceiveStripeWebhookUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getReceiveStripeWebhookMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof receiveStripeWebhook>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof receiveStripeWebhook>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["receiveStripeWebhook"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof receiveStripeWebhook>>,
+    void
+  > = () => {
+    return receiveStripeWebhook(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReceiveStripeWebhookMutationResult = NonNullable<
+  Awaited<ReturnType<typeof receiveStripeWebhook>>
+>;
+
+export type ReceiveStripeWebhookMutationError = ErrorType<void>;
+
+/**
+ * @summary Receive signed Stripe payment events
+ */
+export const useReceiveStripeWebhook = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof receiveStripeWebhook>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof receiveStripeWebhook>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getReceiveStripeWebhookMutationOptions(options));
+};
 
 /**
  * Returns server health status

@@ -31,6 +31,7 @@ export type AdminUser = {
   slug: string;
   parentUserId: number | null;
   pinBalance: number;
+  firstPurchaseBonusGranted: boolean;
 };
 
 const ADMIN_ROLES = ["admin", "moderator", "master_admin"] as const;
@@ -102,7 +103,7 @@ export async function getAuthenticatedAdmin(req: Request): Promise<AdminUser | n
   if (!payload) return null;
 
   const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, role: usersTable.role, slug: usersTable.slug, parentUserId: usersTable.parentUserId, pinBalance: usersTable.pinBalance })
+    .select({ id: usersTable.id, name: usersTable.name, role: usersTable.role, slug: usersTable.slug, parentUserId: usersTable.parentUserId, pinBalance: usersTable.pinBalance, firstPurchaseBonusGranted: usersTable.firstPurchaseBonusGranted })
     .from(usersTable)
     .where(and(eq(usersTable.id, payload.sub), inArray(usersTable.role, [...ADMIN_ROLES])));
 

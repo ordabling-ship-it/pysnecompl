@@ -51,8 +51,14 @@ export async function prepareDatabase(): Promise<void> {
     created_at timestamptz NOT NULL DEFAULT now(),
     paid_at timestamptz
   )`);
+  await pool.query("ALTER TABLE stripe_pin_purchases ADD COLUMN IF NOT EXISTS bonus_pins integer NOT NULL DEFAULT 0");
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS stripe_pin_purchases_session_unique ON stripe_pin_purchases (stripe_session_id)");
   await pool.query("CREATE INDEX IF NOT EXISTS stripe_pin_purchases_creator_created_idx ON stripe_pin_purchases (creator_user_id, created_at)");
+  // Existing successful orders mean the account has already used its first-purchase opportunity.
+  await pool.query(`UPDATE users SET first_purchase_bonus_granted = true
+    WHERE first_purchase_bonus_granted = false AND EXISTS (
+      SELECT 1 FROM stripe_pin_purchases p WHERE p.creator_user_id = users.id AND p.status = 'paid'
+    )`);
 
   await pool.query(
     "ALTER TABLE markers ADD COLUMN IF NOT EXISTS archived_at timestamptz",

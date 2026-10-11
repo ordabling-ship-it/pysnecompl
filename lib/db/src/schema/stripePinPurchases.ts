@@ -8,6 +8,7 @@ export const stripePinPurchasesTable = pgTable("stripe_pin_purchases", {
   stripePaymentIntentId: text("stripe_payment_intent_id"),
   packageId: text("package_id").notNull(),
   pins: integer("pins").notNull(),
+  bonusPins: integer("bonus_pins").notNull().default(0),
   amountCents: integer("amount_cents").notNull(),
   refundAmountCents: integer("refund_amount_cents").notNull().default(0),
   currency: text("currency").notNull().default("pln"),

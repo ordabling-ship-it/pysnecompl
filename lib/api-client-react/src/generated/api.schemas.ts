@@ -30,6 +30,7 @@ export interface AuthResponse {
   role: string;
   slug?: string;
   pinBalance?: number;
+  firstPurchaseBonusGranted?: boolean;
 }
 
 export interface GuestAuthResponse {
@@ -49,11 +50,11 @@ export interface Marker {
   id: number;
   title: string;
   description: string;
-  /** @nullable */
-  category: string | null;
   code: string;
   lat: number;
   lng: number;
+  /** @nullable */
+  category?: string | null;
   /** @nullable */
   imageUrl: string | null;
   createdAt: string;
@@ -73,10 +74,10 @@ export interface Marker {
 export interface CreateMarkerBody {
   title: string;
   description: string;
-  /** @nullable */
-  category?: string | null;
   lat: number;
   lng: number;
+  /** @nullable */
+  category?: string | null;
   /** @nullable */
   imageUrl?: string | null;
 }
@@ -114,6 +115,41 @@ export interface Stats {
   expiredMarkers: number;
   totalRedemptions: number;
 }
+
+export type CreatePinCheckoutSessionBodyPackageId =
+  (typeof CreatePinCheckoutSessionBodyPackageId)[keyof typeof CreatePinCheckoutSessionBodyPackageId];
+
+export const CreatePinCheckoutSessionBodyPackageId = {
+  start: "start",
+  growth: "growth",
+  popular: "popular",
+  event: "event",
+} as const;
+
+export type CreatePinCheckoutSessionBody = {
+  packageId: CreatePinCheckoutSessionBodyPackageId;
+};
+
+export type CreatePinCheckoutSession201 = {
+  url: string;
+};
+
+export type GetPinCheckoutStatus200Status =
+  (typeof GetPinCheckoutStatus200Status)[keyof typeof GetPinCheckoutStatus200Status];
+
+export const GetPinCheckoutStatus200Status = {
+  pending: "pending",
+  paid: "paid",
+  failed: "failed",
+  expired: "expired",
+} as const;
+
+export type GetPinCheckoutStatus200 = {
+  status: GetPinCheckoutStatus200Status;
+  pinBalance: number;
+  bonusPins: number;
+  firstPurchaseBonusGranted: boolean;
+};
 
 export type ListRedemptionsParams = {
   userId?: number;

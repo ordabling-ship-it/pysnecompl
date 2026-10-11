@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { boolean, pgTable, serial, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -11,6 +11,7 @@ export const usersTable = pgTable("users", {
   role: text("role").notNull().default("user"),
   parentUserId: integer("parent_user_id"),
   pinBalance: integer("pin_balance").notNull().default(10),
+  firstPurchaseBonusGranted: boolean("first_purchase_bonus_granted").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

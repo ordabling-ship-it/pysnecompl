@@ -8,6 +8,35 @@
 import * as zod from "zod";
 
 /**
+ * @summary Create a Stripe Checkout session for a creator pin package
+ */
+export const CreatePinCheckoutSessionBody = zod.object({
+  packageId: zod.enum(["start", "growth", "popular", "event"]),
+});
+
+/**
+ * @summary Get the status of the signed-in creator's Stripe Checkout session
+ */
+export const GetPinCheckoutStatusParams = zod.object({
+  sessionId: zod.coerce.string(),
+});
+
+export const GetPinCheckoutStatusResponse = zod.object({
+  status: zod.enum(["pending", "paid", "failed", "expired"]),
+  pinBalance: zod.number(),
+  bonusPins: zod.number(),
+  firstPurchaseBonusGranted: zod.boolean(),
+});
+
+/**
+ * Signature is verified against the raw request body using STRIPE_WEBHOOK_SECRET.
+ * @summary Receive signed Stripe payment events
+ */
+export const ReceiveStripeWebhookHeader = zod.object({
+  "Stripe-Signature": zod.string(),
+});
+
+/**
  * Returns server health status
  * @summary Health check
  */
@@ -29,6 +58,7 @@ export const AdminLoginResponse = zod.object({
   role: zod.string(),
   slug: zod.string().optional(),
   pinBalance: zod.number().optional(),
+  firstPurchaseBonusGranted: zod.boolean().optional(),
 });
 
 /**
@@ -66,10 +96,10 @@ export const ListMarkersResponseItem = zod.object({
   id: zod.number(),
   title: zod.string(),
   description: zod.string(),
-  category: zod.string().nullable(),
   code: zod.string(),
   lat: zod.number(),
   lng: zod.number(),
+  category: zod.string().nullish(),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
   expiresAt: zod
@@ -94,9 +124,9 @@ export const ListMarkersResponse = zod.array(ListMarkersResponseItem);
 export const CreateMarkerBody = zod.object({
   title: zod.string(),
   description: zod.string(),
-  category: zod.string().max(50).nullish(),
   lat: zod.number(),
   lng: zod.number(),
+  category: zod.string().nullish(),
   imageUrl: zod.string().nullish(),
 });
 
@@ -111,10 +141,10 @@ export const GetMarkerResponse = zod.object({
   id: zod.number(),
   title: zod.string(),
   description: zod.string(),
-  category: zod.string().nullable(),
   code: zod.string(),
   lat: zod.number(),
   lng: zod.number(),
+  category: zod.string().nullish(),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
   expiresAt: zod
@@ -150,10 +180,10 @@ export const GetMarkerByCodeResponse = zod.object({
   id: zod.number(),
   title: zod.string(),
   description: zod.string(),
-  category: zod.string().nullable(),
   code: zod.string(),
   lat: zod.number(),
   lng: zod.number(),
+  category: zod.string().nullish(),
   imageUrl: zod.string().nullable(),
   createdAt: zod.string(),
   expiresAt: zod

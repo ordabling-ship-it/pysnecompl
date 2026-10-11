@@ -35,7 +35,7 @@ paths:
               properties:
                 packageId:
                   type: string
-                  enum: [small, medium, large]
+                  enum: [start, growth, popular, event]
               required: [packageId]
       responses:
         "201":
@@ -88,7 +88,11 @@ paths:
                     enum: [pending, paid, failed, expired]
                   pinBalance:
                     type: integer
-                required: [status, pinBalance]
+                  bonusPins:
+                    type: integer
+                  firstPurchaseBonusGranted:
+                    type: boolean
+                required: [status, pinBalance, bonusPins, firstPurchaseBonusGranted]
         "404":
           description: Session not found for this creator
           content:
@@ -425,6 +429,8 @@ components:
           type: string
         pinBalance:
           type: integer
+        firstPurchaseBonusGranted:
+          type: boolean
       required:
         - id
         - name
@@ -475,6 +481,8 @@ components:
           type: number
         lng:
           type: number
+        category:
+          type: ["string", "null"]
         imageUrl:
           type: ["string", "null"]
         createdAt:
@@ -511,6 +519,8 @@ components:
           type: number
         lng:
           type: number
+        category:
+          type: ["string", "null"]
         imageUrl:
           type: ["string", "null"]
       required:

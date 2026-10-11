@@ -13,6 +13,7 @@ import {
   getGetDiscoveriesQueryKey,
 } from "@workspace/api-client-react";
 import type { Discoveries, Marker, Stats } from "@workspace/api-client-react";
+import { CREATOR_PIN_PACKAGES, FIRST_PURCHASE_BONUS_PINS, type CreatorPinPackageId } from "@workspace/api-zod/pin-packages";
 import type { GuestData } from "@/App";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,12 +49,6 @@ const createIcon = (html: string) => L.divIcon({
   iconAnchor: [16, 32],
   popupAnchor: [0, -32],
 });
-
-const CREATOR_PIN_PACKAGES = [
-  { id: "small", name: "Mały", amount: 50, price: 249 },
-  { id: "medium", name: "Średni", amount: 100, price: 449 },
-  { id: "large", name: "Duży", amount: 250, price: 849 },
-] as const;
 
 // ─────────────────────────────────────────────
 // Image compression: resize to max 800×600, then
@@ -214,7 +209,7 @@ function buildGuestPopupHtml(g: GuestData, isDark = false): string {
 // Types
 // ─────────────────────────────────────────────
 type AppScreenProps = {
-  user: { id: number; name: string; role: string; pinBalance?: number } | null;
+  user: { id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null;
   guestData: GuestData | null;
   onLogout: () => void;
   theme: "light" | "dark";
@@ -371,6 +366,7 @@ function MarkerRow({
 export default function AppScreen({ user, guestData, onLogout, theme, onToggleTheme, loginMsg, onLoginMsgDismiss, layoutPreview = false }: AppScreenProps) {
   const { toast } = useToast();
   const [pinBalance, setPinBalance] = useState<number | null>(user?.pinBalance ?? null);
+  const [firstPurchaseBonusGranted, setFirstPurchaseBonusGranted] = useState(user?.firstPurchaseBonusGranted ?? false);
   const [pinPurchaseOpen, setPinPurchaseOpen] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -387,7 +383,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const [passwordResetConfirm, setPasswordResetConfirm] = useState("");
   const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [passwordResetBusy, setPasswordResetBusy] = useState(false);
-  const handlePinCheckout = async (packageId: (typeof CREATOR_PIN_PACKAGES)[number]["id"]) => {
+  const handlePinCheckout = async (packageId: CreatorPinPackageId) => {
     setCheckoutError(null);
     setCheckoutBusy(packageId);
     try {
@@ -444,8 +440,14 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           if (result.status === "paid") {
             if (stopped) return;
             setPinBalance(result.pinBalance);
+            setFirstPurchaseBonusGranted(Boolean(result.firstPurchaseBonusGranted));
             setPaymentPending(false);
-            toast({ title: "Płatność potwierdzona", description: "Nowe pinezki zostały dodane do Twojego konta." });
+            toast({
+              title: "Płatność potwierdzona",
+              description: result.bonusPins > 0
+                ? `Dodano ${result.bonusPins} pinezek bonusowych. Łącznie saldo obejmuje zakup i bonus.`
+                : "Nowe pinezki zostały dodane do Twojego konta.",
+            });
             clearPaymentQuery();
             return;
           }
@@ -1128,11 +1130,14 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 {isCreator && (
                   <section aria-label="Pakiety pinezek dla Kreatorów" className="rounded-xl border border-green-200 bg-green-50 p-3 text-green-950 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
                     <h2 className="text-sm font-semibold">Pakiety pinezek dla Kreatorów</h2>
+                    <p className="mt-1 text-xs">Saldo: <strong>{pinBalance ?? user?.pinBalance ?? "…"} pinezek</strong></p>
+                    <p className="mt-1 text-xs">1 pinezka = 1 aktywny skarb na mapie. Zakup jest jednorazowy i nie odnawia się automatycznie.</p>
+                    {!firstPurchaseBonusGranted && <p className="mt-1 text-xs font-medium">Nowe konto Kreatora otrzymuje 10 pinezek na start, a przy pierwszym zakupie dostaje dodatkowe {FIRST_PURCHASE_BONUS_PINS} pinezek.</p>}
                     <p className="mt-1 text-xs">Wybierz pakiet i zapłać bezpiecznie przez Stripe Checkout.</p>
                     <div className="mt-2 space-y-1">
                       {CREATOR_PIN_PACKAGES.map((pack) => (
                         <Button key={pack.id} type="button" variant="outline" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)} className="flex h-auto w-full items-center justify-between rounded-lg border-green-200 bg-white px-2.5 py-2 text-xs text-green-950 hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:text-green-100 dark:hover:bg-green-950/70">
-                          <span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.amount} pinezek</span><strong>{pack.price} zł</strong>
+                          <span className="flex flex-col items-start">{pack.badge && <strong className="mb-1 text-[10px] text-amber-700 dark:text-amber-300">{pack.badge}</strong>}<span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.pins} pinezek</span></span><strong>{pack.amountCents / 100} zł</strong>
                         </Button>
                       ))}
                     </div>
@@ -1652,12 +1657,13 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           <DialogHeader>
             <DialogTitle className="text-green-900 dark:text-green-200">Pakiety pinezek dla Kreatorów</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet i zapłać bezpiecznie przez Stripe Checkout. Pinezki zostaną automatycznie dodane po potwierdzeniu płatności.</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet jednorazowy. 1 pinezka = 1 aktywny skarb na mapie. Po potwierdzeniu płatności pinezki zostaną dodane do konta.</p>
+          {!firstPurchaseBonusGranted && <p className="text-sm font-medium text-green-800 dark:text-green-300">Nowe konto ma 10 pinezek na start, a pierwszy zakup daje dodatkowe {FIRST_PURCHASE_BONUS_PINS} pinezek.</p>}
           {paymentPending && <p role="status" className="rounded-md bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">Stripe potwierdza płatność. Saldo pinezek odświeży się po otrzymaniu potwierdzenia.</p>}
           <div className="space-y-2">
             {CREATOR_PIN_PACKAGES.map((pack) => (
               <Button key={pack.id} type="button" variant="outline" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)} className="flex h-auto w-full items-center justify-between rounded-lg border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
-                <span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.amount} pinezek</span><strong>{pack.price} zł</strong>
+                <span className="flex flex-col items-start">{pack.badge && <strong className="mb-1 text-xs text-amber-700 dark:text-amber-300">{pack.badge}</strong>}<span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.pins} pinezek</span></span><strong>{pack.amountCents / 100} zł</strong>
               </Button>
             ))}
           </div>

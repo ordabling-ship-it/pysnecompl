@@ -48,7 +48,7 @@ function getAutoTheme(): "light" | "dark" {
 
 function MainApp() {
   const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
-  const [user, setUser] = useState<{ id: number; name: string; role: string; pinBalance?: number } | null>(
+  const [user, setUser] = useState<{ id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null>(
     layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", pinBalance: 10 } : null,
   );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
@@ -102,7 +102,7 @@ function MainApp() {
           headers: { Accept: "application/json" },
         });
         if (response.ok) {
-          const admin = await response.json() as { id: number; name: string; role: string; pinBalance?: number };
+          const admin = await response.json() as { id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean };
           if (mounted) setUser(admin);
           localStorage.removeItem(GUEST_SESSION_KEY);
           return;
@@ -141,7 +141,7 @@ function MainApp() {
     if (user.id !== 1 && user.id !== 2) window.history.replaceState({}, "", "/");
   }, [user, hydrating]);
 
-  const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number }) => {
+  const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean }) => {
     setUser(data);
     setLoginMsg(`Witaj, ${data.name}!`);
   };

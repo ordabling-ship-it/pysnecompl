@@ -2,18 +2,12 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { and, eq, sql } from "drizzle-orm";
 import { auditLogsTable, db, stripePinPurchasesTable, usersTable } from "@workspace/db";
+import { FIRST_PURCHASE_BONUS_PINS, getCreatorPinPackage } from "@workspace/api-zod/pin-packages";
 import { getAuthenticatedAdmin, requireRole, type AdminUser } from "../lib/admin-session";
 import { recordAudit } from "../lib/audit";
+import { creditPendingPurchaseOnce } from "../lib/pin-purchase-credit.mjs";
 
 const router: IRouter = Router();
-
-const PIN_PACKAGES = {
-  small: { name: "Mały", pins: 50, amountCents: 24_900 },
-  medium: { name: "Średni", pins: 100, amountCents: 44_900 },
-  large: { name: "Duży", pins: 250, amountCents: 84_900 },
-} as const;
-
-type PinPackageId = keyof typeof PIN_PACKAGES;
 
 function getStripe(): Stripe | null {
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -37,7 +31,8 @@ router.post("/payments/checkout-session", requireRole("admin"), async (req, res)
   const user = res.locals.adminUser as AdminUser;
 
   const packageId = req.body?.packageId;
-  if (typeof packageId !== "string" || !Object.hasOwn(PIN_PACKAGES, packageId)) {
+  const selectedPackage = getCreatorPinPackage(packageId);
+  if (!selectedPackage) {
     res.status(400).json({ error: "Wybierz jeden z dostępnych pakietów pinezek." });
     return;
   }
@@ -49,13 +44,12 @@ router.post("/payments/checkout-session", requireRole("admin"), async (req, res)
     return;
   }
 
-  const selectedPackage = PIN_PACKAGES[packageId as PinPackageId];
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       client_reference_id: String(user.id),
-      metadata: { creator_user_id: String(user.id), package_id: packageId },
-      payment_intent_data: { metadata: { creator_user_id: String(user.id), package_id: packageId } },
+      metadata: { creator_user_id: String(user.id), package_id: selectedPackage.id },
+      payment_intent_data: { metadata: { creator_user_id: String(user.id), package_id: selectedPackage.id } },
       line_items: [{
         quantity: 1,
         price_data: {
@@ -79,20 +73,20 @@ router.post("/payments/checkout-session", requireRole("admin"), async (req, res)
     await db.insert(stripePinPurchasesTable).values({
       creatorUserId: user.id,
       stripeSessionId: session.id,
-      packageId,
+      packageId: selectedPackage.id,
       pins: selectedPackage.pins,
       amountCents: selectedPackage.amountCents,
       currency: "pln",
       status: "pending",
     });
     await recordAudit("pin_pack_payment_started", user.id, user.id, {
-      packageId,
+      packageId: selectedPackage.id,
       pins: selectedPackage.pins,
       amountCents: selectedPackage.amountCents,
       currency: "pln",
     });
 
-    req.log.info({ creatorUserId: user.id, packageId }, "Stripe Checkout session created");
+    req.log.info({ creatorUserId: user.id, packageId: selectedPackage.id }, "Stripe Checkout session created");
     res.status(201).json({ url: session.url });
   } catch (error) {
     req.log.error({ error, creatorUserId: user.id }, "Stripe Checkout session could not be created");
@@ -117,7 +111,7 @@ router.get("/payments/checkout-session/:sessionId", async (req, res): Promise<vo
     return;
   }
 
-  const [purchase] = await db.select({ status: stripePinPurchasesTable.status })
+  const [purchase] = await db.select({ status: stripePinPurchasesTable.status, bonusPins: stripePinPurchasesTable.bonusPins })
     .from(stripePinPurchasesTable)
     .where(and(eq(stripePinPurchasesTable.stripeSessionId, sessionId), eq(stripePinPurchasesTable.creatorUserId, user.id)))
     .limit(1);
@@ -126,8 +120,14 @@ router.get("/payments/checkout-session/:sessionId", async (req, res): Promise<vo
     return;
   }
 
-  const [freshUser] = await db.select({ pinBalance: usersTable.pinBalance }).from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
-  res.json({ status: purchase.status, pinBalance: freshUser?.pinBalance ?? user.pinBalance });
+  const [freshUser] = await db.select({ pinBalance: usersTable.pinBalance, firstPurchaseBonusGranted: usersTable.firstPurchaseBonusGranted })
+    .from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
+  res.json({
+    status: purchase.status,
+    pinBalance: freshUser?.pinBalance ?? user.pinBalance,
+    bonusPins: purchase.bonusPins,
+    firstPurchaseBonusGranted: freshUser?.firstPurchaseBonusGranted ?? false,
+  });
 });
 
 export async function stripeWebhookHandler(req: Request, res: Response): Promise<void> {
@@ -221,39 +221,64 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
       .where(eq(stripePinPurchasesTable.stripeSessionId, session.id)).limit(1);
     const metadataUserId = Number(session.metadata?.creator_user_id);
     const packageId = session.metadata?.package_id;
-    const expectedPackage = packageId && Object.hasOwn(PIN_PACKAGES, packageId) ? PIN_PACKAGES[packageId as PinPackageId] : null;
+    const expectedPackage = getCreatorPinPackage(packageId);
     const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
-    if (!purchase || !expectedPackage ||
+    if (!purchase) {
+      // A webhook can beat the database insert that records the Checkout session.
+      // Ask Stripe to retry instead of acknowledging an order that has not been stored yet.
+      req.log.warn({ sessionId: session.id }, "Stripe payment arrived before its pin purchase was stored");
+      res.status(500).send("Pin purchase is not available yet.");
+      return;
+    }
+    if (!expectedPackage || session.mode !== "payment" ||
         purchase.creatorUserId !== metadataUserId || String(purchase.creatorUserId) !== session.client_reference_id ||
         purchase.packageId !== packageId || purchase.pins !== expectedPackage.pins ||
         purchase.amountCents !== expectedPackage.amountCents || session.amount_total !== purchase.amountCents ||
         session.currency?.toLowerCase() !== purchase.currency) {
       req.log.error({ sessionId: session.id }, "Stripe payment did not match a stored pin purchase");
-      res.json({ received: true });
+      res.status(400).json({ error: "Stripe payment did not match the stored pin purchase." });
       return;
     }
 
-    const credited = await db.transaction(async (tx) => {
-      const [paidPurchase] = await tx.update(stripePinPurchasesTable)
-        .set({ status: "paid", paidAt: new Date(), stripePaymentIntentId: paymentIntentId })
-        .where(and(eq(stripePinPurchasesTable.id, purchase.id), eq(stripePinPurchasesTable.status, "pending")))
-        .returning({ creatorUserId: stripePinPurchasesTable.creatorUserId, pins: stripePinPurchasesTable.pins });
-      if (!paidPurchase) return null;
-      await tx.update(usersTable)
-        .set({ pinBalance: sql`${usersTable.pinBalance} + ${paidPurchase.pins}` })
-        .where(eq(usersTable.id, paidPurchase.creatorUserId));
-      return paidPurchase;
-    });
+    const credited = await db.transaction((tx) => creditPendingPurchaseOnce({
+      purchaseId: purchase.id,
+      firstPurchaseBonusPins: FIRST_PURCHASE_BONUS_PINS,
+      markPaidIfPending: async (purchaseId) => {
+        const [paidPurchase] = await tx.update(stripePinPurchasesTable)
+          .set({ status: "paid", paidAt: new Date(), stripePaymentIntentId: paymentIntentId })
+          .where(and(eq(stripePinPurchasesTable.id, purchaseId), eq(stripePinPurchasesTable.status, "pending")))
+          .returning({ id: stripePinPurchasesTable.id, creatorUserId: stripePinPurchasesTable.creatorUserId, pins: stripePinPurchasesTable.pins });
+        return paidPurchase ?? null;
+      },
+      lockCreator: async (creatorUserId) => {
+        const [creator] = await tx.select({ id: usersTable.id, firstPurchaseBonusGranted: usersTable.firstPurchaseBonusGranted })
+          .from(usersTable).where(eq(usersTable.id, creatorUserId)).limit(1).for("update");
+        return creator ?? null;
+      },
+      addPins: async (creatorUserId, pins) => {
+        await tx.update(usersTable)
+          .set({ pinBalance: sql`${usersTable.pinBalance} + ${pins}` })
+          .where(eq(usersTable.id, creatorUserId));
+      },
+      markFirstPurchaseBonusGranted: async (creatorUserId) => {
+        await tx.update(usersTable).set({ firstPurchaseBonusGranted: true }).where(eq(usersTable.id, creatorUserId));
+      },
+      saveBonusPins: async (purchaseId, bonusPins) => {
+        await tx.update(stripePinPurchasesTable).set({ bonusPins }).where(eq(stripePinPurchasesTable.id, purchaseId));
+      },
+    }));
 
     if (credited) {
       await recordAudit("pin_pack_purchased", null, credited.creatorUserId, {
         packageId: purchase.packageId,
         pins: credited.pins,
+        bonusPins: credited.bonusPins,
+        addedPins: credited.addedPins,
         amountCents: purchase.amountCents,
         currency: purchase.currency,
         status: "paid",
       });
-      req.log.info({ creatorUserId: credited.creatorUserId, pins: credited.pins }, "Stripe payment credited");
+      req.log.info({ creatorUserId: credited.creatorUserId, pins: credited.pins, bonusPins: credited.bonusPins }, "Stripe payment credited");
     }
   }
 

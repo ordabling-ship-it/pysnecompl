@@ -9,14 +9,14 @@ import { Loader2, Key, User, ArrowLeft, Coins, AlertCircle, Sun, Moon } from "lu
 import { getOrCreateGuestToken, type GuestData } from "@/App";
 
 type AuthScreenProps = {
-  onLoginAdmin: (user: { id: number; name: string; role: string; pinBalance?: number }) => void;
+  onLoginAdmin: (user: { id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean }) => void;
   onLoginGuest: (guestData: GuestData) => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
 };
 
 export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggleTheme }: AuthScreenProps) {
-  const [view, setView] = useState<"guest" | "admin">("guest");
+  const [view, setView] = useState<"guest" | "admin">(() => new URLSearchParams(window.location.search).get("login") === "creator" ? "admin" : "guest");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -125,9 +125,6 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                 >
                   Panel administratora
                 </Button>
-                <a href="/cennik.html" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
-                  Cennik dla Kreatorów
-                </a>
               </CardFooter>
             </form>
           </>
