@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -47,9 +47,12 @@ function getAutoTheme(): "light" | "dark" {
 }
 
 function MainApp() {
+  const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+  const routeMode = pathname === "/panel" ? "panel" : pathname === "/activate" ? "activate" : pathname === "/analytics" ? "analytics" : "player";
+  const activationToken = routeMode === "activate" ? new URLSearchParams(window.location.search).get("token") : null;
   const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
-  const [user, setUser] = useState<{ id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null>(
-    layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", pinBalance: 10 } : null,
+  const [user, setUser] = useState<{ id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null>(
+    layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", slug: "podglad", pinBalance: 10 } : null,
   );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
   const [hydrating, setHydrating] = useState(!layoutPreview);
@@ -93,7 +96,7 @@ function MainApp() {
 
   // Restore the signed admin cookie first, then fall back to the saved guest code.
   useEffect(() => {
-    if (layoutPreview || !termsAccepted) return;
+    if (layoutPreview || (routeMode === "player" && !termsAccepted) || routeMode === "activate") return;
     let mounted = true;
     const restoreSession = async () => {
       try {
@@ -102,7 +105,7 @@ function MainApp() {
           headers: { Accept: "application/json" },
         });
         if (response.ok) {
-          const admin = await response.json() as { id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean };
+          const admin = await response.json() as { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean };
           if (mounted) setUser(admin);
           localStorage.removeItem(GUEST_SESSION_KEY);
           return;
@@ -111,10 +114,7 @@ function MainApp() {
         // A missing or expired admin cookie falls through to guest restoration.
       }
 
-      // Analytics is an admin-only destination. Do not restore a guest session
-      // here, because it would hide the normal admin login screen.
-      if (window.location.pathname === "/analytics") return;
-
+      if (routeMode !== "player") return;
       const saved = localStorage.getItem(GUEST_SESSION_KEY);
       if (!saved) return;
       try {
@@ -131,17 +131,9 @@ function MainApp() {
       if (mounted) setHydrating(false);
     });
     return () => { mounted = false; };
-  }, [layoutPreview, termsAccepted]);
+  }, [layoutPreview, termsAccepted, routeMode]);
 
-  useEffect(() => {
-    if (window.location.pathname !== "/analytics" || hydrating) return;
-    // Keep the deep link while unauthenticated so the standard login can send
-    // authorized users straight into analytics.
-    if (!user) return;
-    if (user.id !== 1 && user.id !== 2) window.history.replaceState({}, "", "/");
-  }, [user, hydrating]);
-
-  const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean }) => {
+  const handleAdminLogin = (data: { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean }) => {
     setUser(data);
     setLoginMsg(`Witaj, ${data.name}!`);
   };
@@ -167,7 +159,11 @@ function MainApp() {
     }
   };
 
-  if (!termsAccepted) {
+  if (routeMode === "activate") {
+    return <AuthScreen onLoginAdmin={handleAdminLogin} onLoginGuest={handleGuestLogin} mode="activate" activationToken={activationToken ?? ""} theme={theme} onToggleTheme={handleToggleTheme} />;
+  }
+
+  if (routeMode === "player" && !termsAccepted) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-green-900 to-amber-600 p-4 dark:from-gray-900 dark:to-gray-800">
         <section className="w-full max-w-lg rounded-2xl bg-white p-7 text-center shadow-2xl dark:border dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 sm:p-9">
@@ -175,7 +171,7 @@ function MainApp() {
           <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">Podchody 2.0</p>
           <h1 className="mb-3 text-2xl font-bold text-green-950 dark:text-green-300">Zanim rozpoczniesz grę</h1>
           <p className="mb-6 text-sm leading-6 text-gray-600 dark:text-gray-300">
-            Zapoznaj się z zasadami bezpiecznej zabawy i korzystania z Pysne.com.pl. Udział w grze jest bezpłatny; zakupy dla administratorów są opcjonalne.
+            Zapoznaj się z zasadami bezpiecznej zabawy i korzystania z Pysne.com.pl. Odbiorcy korzystają bezpłatnie, a Kreatorzy mogą jednorazowo dokupić pakiet pinezek.
           </p>
           <div className="flex flex-col items-center gap-4">
             <a href="/regulamin.html" className="font-semibold text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
@@ -205,19 +201,23 @@ function MainApp() {
     );
   }
 
-  if (window.location.pathname === "/analytics" && user && (user.id === 1 || user.id === 2)) {
-    return <Suspense fallback={<div className="min-h-screen bg-gray-50 p-8 text-center text-sm text-gray-600 dark:bg-gray-950 dark:text-gray-300">Ładowanie analityki…</div>}><AnalyticsScreen userId={user.id} userName={user.name} theme={theme} onToggleTheme={handleToggleTheme} /></Suspense>;
-  }
-
   if (!user && !guestData) {
     return (
       <AuthScreen
         onLoginAdmin={handleAdminLogin}
         onLoginGuest={handleGuestLogin}
+        mode={routeMode === "player" ? "player" : "panel"}
         theme={theme}
         onToggleTheme={handleToggleTheme}
       />
     );
+  }
+
+  if (routeMode === "analytics" && user) {
+    if (user.id !== 1 && user.id !== 2) {
+      return <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6 text-center dark:bg-gray-950 dark:text-gray-100"><section className="max-w-md rounded-2xl border bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900"><h1 className="text-xl font-bold">Brak dostępu</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Panel analityczny jest dostępny tylko dla uprawnionych kont.</p><a href="/" className="mt-5 inline-block rounded-lg bg-green-800 px-4 py-2 font-semibold text-white">Wróć do strony głównej</a></section></main>;
+    }
+    return <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">Ładowanie analityki…</div>}><AnalyticsScreen userId={user.id} userName={user.name} theme={theme} onToggleTheme={handleToggleTheme} /></Suspense>;
   }
 
   return (
@@ -237,11 +237,9 @@ function MainApp() {
 function Router() {
   return (
     <Switch>
-      <Route path="/analytics" component={MainApp} />
+      <Route path="/panel" component={MainApp} />
+      <Route path="/activate" component={MainApp} />
       <Route path="/" component={MainApp} />
-      <Route path="/:legacyPath">
-        <Redirect to="/" replace />
-      </Route>
       <Route component={NotFound} />
     </Switch>
   );

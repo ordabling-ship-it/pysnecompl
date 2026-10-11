@@ -69,6 +69,7 @@ test("public pricing page lists only the four one-time creator packages", async 
   const page = await readFile(new URL("../../treasure-hunt/public/cennik.html", import.meta.url), "utf8");
   const appScreen = await readFile(new URL("../../treasure-hunt/src/pages/AppScreen.tsx", import.meta.url), "utf8");
   const authScreen = await readFile(new URL("../../treasure-hunt/src/pages/AuthScreen.tsx", import.meta.url), "utf8");
+  const app = await readFile(new URL("../../treasure-hunt/src/App.tsx", import.meta.url), "utf8");
   const paymentRoute = await readFile(new URL("../src/routes/payments.ts", import.meta.url), "utf8");
   assert.ok(page.includes("<strong>20</strong><small>pinezek · pakiet Start</small>"));
   assert.ok(page.includes("<strong>50</strong><small>pinezek · pakiet Rozwój</small>"));
@@ -83,8 +84,15 @@ test("public pricing page lists only the four one-time creator packages", async 
   assert.match(page, /@media\(max-width:850px\)\{\.packs\{grid-template-columns:repeat\(2,1fr\)\}/);
   assert.match(page, /@media\(max-width:650px\)[\s\S]*?\.packs\{grid-template-columns:1fr/);
   assert.match(appScreen, /const isCreator = user\?\.role === "admin"/);
+  assert.match(appScreen, /user && !layoutPreview && \(hasUnlimitedPins \|\| isCreator\)/, "only creators and unlimited-pin managers see their balance panel");
   assert.match(appScreen, /CREATOR_PIN_PACKAGES\.map/);
+  assert.match(appScreen, /user\?\.id === 1 \|\| user\?\.id === 2/, "only the two authorized internal IDs see the analytics link");
+  assert.doesNotMatch(appScreen, /BuyCoffee|buycoffee|pin-topups/);
+  assert.match(app, /routeMode === "analytics" && user/);
+  assert.match(app, /user\.id !== 1 && user\.id !== 2/);
   assert.match(paymentRoute, /router\.post\("\/payments\/checkout-session", requireRole\("admin"\)/);
   assert.match(paymentRoute, /mode: "payment"/);
-  assert.equal((authScreen.match(/href="\/cennik\.html"/g) ?? []).length, 1, "only the creator/admin login view links to pricing");
+  assert.match(paymentRoute, /session\.amount_total !== purchase\.amountCents/);
+  assert.match(paymentRoute, /purchase\.pins !== expectedPackage\.pins/);
+  assert.equal((authScreen.match(/href="\/cennik\.html"/g) ?? []).length, 0, "pricing is shown only after a creator has logged in");
 });

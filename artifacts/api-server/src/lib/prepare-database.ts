@@ -9,6 +9,7 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS slug text");
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_user_id integer");
   await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_balance integer NOT NULL DEFAULT 10");
+  await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_purchase_bonus_granted boolean NOT NULL DEFAULT false");
   await pool.query("ALTER TABLE markers ADD COLUMN IF NOT EXISTS owner_user_id integer");
   await pool.query(`UPDATE users SET slug = 'konto-' || id WHERE slug IS NULL OR slug = ''`);
   await pool.query("ALTER TABLE users ALTER COLUMN slug SET NOT NULL");
@@ -54,10 +55,32 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query("ALTER TABLE stripe_pin_purchases ADD COLUMN IF NOT EXISTS bonus_pins integer NOT NULL DEFAULT 0");
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS stripe_pin_purchases_session_unique ON stripe_pin_purchases (stripe_session_id)");
   await pool.query("CREATE INDEX IF NOT EXISTS stripe_pin_purchases_creator_created_idx ON stripe_pin_purchases (creator_user_id, created_at)");
-  // Existing successful orders mean the account has already used its first-purchase opportunity.
+  await pool.query(`CREATE TABLE IF NOT EXISTS account_invites (
+    id serial PRIMARY KEY,
+    user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_by_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    token_hash text NOT NULL UNIQUE,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS account_invites_user_id_idx ON account_invites (user_id)");
+  await pool.query(`CREATE TABLE IF NOT EXISTS pin_topups (
+    id serial PRIMARY KEY,
+    user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    granted_by_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    package_id text NOT NULL,
+    pins integer NOT NULL CHECK (pins > 0),
+    price_pln integer NOT NULL CHECK (price_pln > 0),
+    payment_reference text NOT NULL UNIQUE,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS pin_topups_user_id_idx ON pin_topups (user_id)");
+  // Legacy administrator-confirmed top-ups also count as a creator's first purchase.
   await pool.query(`UPDATE users SET first_purchase_bonus_granted = true
-    WHERE first_purchase_bonus_granted = false AND EXISTS (
-      SELECT 1 FROM stripe_pin_purchases p WHERE p.creator_user_id = users.id AND p.status = 'paid'
+    WHERE first_purchase_bonus_granted = false AND (
+      EXISTS (SELECT 1 FROM stripe_pin_purchases p WHERE p.creator_user_id = users.id AND p.status = 'paid')
+      OR EXISTS (SELECT 1 FROM pin_topups t WHERE t.user_id = users.id)
     )`);
 
   await pool.query(

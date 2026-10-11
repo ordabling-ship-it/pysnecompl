@@ -209,7 +209,7 @@ function buildGuestPopupHtml(g: GuestData, isDark = false): string {
 // Types
 // ─────────────────────────────────────────────
 type AppScreenProps = {
-  user: { id: number; name: string; role: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null;
+  user: { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null;
   guestData: GuestData | null;
   onLogout: () => void;
   theme: "light" | "dark";
@@ -223,7 +223,6 @@ type MarkerItem = {
   id: number;
   title: string;
   description: string;
-  category?: string | null;
   code: string;
   lat: number;
   lng: number;
@@ -368,121 +367,29 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const [pinBalance, setPinBalance] = useState<number | null>(user?.pinBalance ?? null);
   const [firstPurchaseBonusGranted, setFirstPurchaseBonusGranted] = useState(user?.firstPurchaseBonusGranted ?? false);
   const [pinPurchaseOpen, setPinPurchaseOpen] = useState(false);
-  const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
+  const [checkoutBusy, setCheckoutBusy] = useState<CreatorPinPackageId | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [paymentPending, setPaymentPending] = useState(false);
-  const [managedUsers, setManagedUsers] = useState<Array<{ id: number; name: string; role: string; pinBalance: number; totalPins: number; discoveries: number; redemptions: number }>>([]);
+  const [managedUsers, setManagedUsers] = useState<Array<{ id: number; name: string; slug: string; role: string; parentUserId: number | null; pinBalance: number; totalPins: number; discoveries: number; redemptions: number }>>([]);
+  const [globalOverview, setGlobalOverview] = useState<{ accounts: number; admins: number; moderators: number; markers: number; activatedMarkers: number; activeMarkers: number; expiredMarkers: number; totalRedemptions: number; creatorUsage: Array<{ id: number; name: string; slug: string; pinBalance: number; markers: number; activations: number; activeMarkers: number; redemptions: number }> } | null>(null);
   const [managedActivity, setManagedActivity] = useState<Array<{ id: number; eventType: string; createdAt: string; actorName: string | null; details: Record<string, string | number | boolean | null> }>>([]);
   const [accountName, setAccountName] = useState("");
-  const [accountPassword, setAccountPassword] = useState("");
   const [accountRole, setAccountRole] = useState("admin");
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [accountBusy, setAccountBusy] = useState(false);
+  const [inviteBusyId, setInviteBusyId] = useState<number | null>(null);
   const [passwordResetTargetId, setPasswordResetTargetId] = useState<number | null>(null);
   const [passwordResetValue, setPasswordResetValue] = useState("");
   const [passwordResetConfirm, setPasswordResetConfirm] = useState("");
   const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [passwordResetBusy, setPasswordResetBusy] = useState(false);
-  const handlePinCheckout = async (packageId: CreatorPinPackageId) => {
-    setCheckoutError(null);
-    setCheckoutBusy(packageId);
-    try {
-      const response = await fetch("/api/payments/checkout-session", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ packageId }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Nie udało się rozpocząć płatności.");
-      const checkoutUrl = new URL(result.url);
-      if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "checkout.stripe.com") {
-        throw new Error("Otrzymany adres płatności Stripe jest nieprawidłowy.");
-      }
-      window.location.assign(checkoutUrl.toString());
-    } catch (error) {
-      setCheckoutError(error instanceof Error ? error.message : "Nie udało się rozpocząć płatności.");
-      setCheckoutBusy(null);
-    }
-  };
-
-  useEffect(() => {
-    if (!user) return;
-    const url = new URL(window.location.href);
-    const paymentResult = url.searchParams.get("payment");
-    const sessionId = url.searchParams.get("session_id");
-    const clearPaymentQuery = () => {
-      url.searchParams.delete("payment");
-      url.searchParams.delete("session_id");
-      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-    };
-
-    if (paymentResult === "cancelled") {
-      setPinPurchaseOpen(true);
-      setCheckoutError(null);
-      toast({ title: "Płatność anulowana", description: "Nie pobrano opłaty. Możesz wybrać pakiet ponownie." });
-      clearPaymentQuery();
-      return;
-    }
-    if (paymentResult !== "success" || !sessionId || user.role !== "admin") return;
-
-    let attempts = 0;
-    let timer: number | undefined;
-    let stopped = false;
-    const checkPayment = async () => {
-      try {
-        const response = await fetch(`/api/payments/checkout-session/${encodeURIComponent(sessionId)}`, {
-          credentials: "same-origin",
-          headers: { Accept: "application/json" },
-        });
-        if (response.ok) {
-          const result = await response.json();
-          if (result.status === "paid") {
-            if (stopped) return;
-            setPinBalance(result.pinBalance);
-            setFirstPurchaseBonusGranted(Boolean(result.firstPurchaseBonusGranted));
-            setPaymentPending(false);
-            toast({
-              title: "Płatność potwierdzona",
-              description: result.bonusPins > 0
-                ? `Dodano ${result.bonusPins} pinezek bonusowych. Łącznie saldo obejmuje zakup i bonus.`
-                : "Nowe pinezki zostały dodane do Twojego konta.",
-            });
-            clearPaymentQuery();
-            return;
-          }
-          if (result.status === "failed" || result.status === "expired") {
-            if (stopped) return;
-            setPaymentPending(false);
-            setPinPurchaseOpen(true);
-            setCheckoutError(result.status === "expired" ? "Sesja płatności wygasła. Wybierz pakiet ponownie." : "Płatność nie została zrealizowana. Możesz spróbować ponownie.");
-            clearPaymentQuery();
-            return;
-          }
-        }
-      } catch {
-        // The webhook may still be processing; retry briefly below.
-      }
-      attempts += 1;
-      if (stopped) return;
-      if (attempts >= 20) {
-        setPaymentPending(true);
-        setPinPurchaseOpen(true);
-        toast({ title: "Płatność jest potwierdzana", description: "Saldo zaktualizuje się po potwierdzeniu przez Stripe. Odśwież stronę za chwilę." });
-        return;
-      }
-      timer = window.setTimeout(checkPayment, 1500);
-    };
-    void checkPayment();
-    return () => {
-      stopped = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [user?.id]);
   const canManageAccounts = user?.role === "moderator" || user?.role === "master_admin";
   const loadManagedUsers = async () => {
     const response = await fetch("/api/control/users", { credentials: "same-origin", headers: { Accept: "application/json" } });
     if (response.ok) setManagedUsers(await response.json());
+    const overviewResponse = await fetch("/api/control/overview", { credentials: "same-origin", headers: { Accept: "application/json" } });
+    if (overviewResponse.ok) setGlobalOverview(await overviewResponse.json());
     const activityResponse = await fetch("/api/control/activity", { credentials: "same-origin", headers: { Accept: "application/json" } });
     if (activityResponse.ok) setManagedActivity(await activityResponse.json());
   };
@@ -496,20 +403,34 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     try {
       const response = await fetch("/api/control/users", {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ username: accountName, password: accountPassword, role: accountRole }),
+        body: JSON.stringify({ username: accountName, role: accountRole }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Nie udało się utworzyć konta.");
-      setAccountName(""); setAccountPassword("");
+      setAccountName(""); setCreatedInviteUrl(result.inviteUrl ?? null);
       await loadManagedUsers();
       toast({
         title: "Konto utworzone",
-        description: `Zaloguj się na stronie głównej. ${result.role === "moderator" ? "Moderator nie ma limitu pinezek." : "Kreator otrzymuje 10 darmowych pinezek."}`,
+        description: `Zaproszenie dla ${result.name} ważne do ${new Date(result.inviteExpiresAt).toLocaleString("pl-PL")}.`,
       });
     } catch (error) {
       setAccountError(error instanceof Error ? error.message : "Nie udało się utworzyć konta.");
     } finally {
       setAccountBusy(false);
+    }
+  };
+  const handleReissueInvite = async (targetId: number, targetName: string) => {
+    setInviteBusyId(targetId);
+    try {
+      const response = await fetch(`/api/control/users/${targetId}/invite`, { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Nie udało się utworzyć zaproszenia.");
+      setCreatedInviteUrl(result.inviteUrl);
+      toast({ title: "Nowe zaproszenie gotowe", description: `Link dla ${targetName} zastąpił poprzedni link.` });
+    } catch (error) {
+      toast({ variant: "destructive", title: "Błąd zaproszenia", description: error instanceof Error ? error.message : "Spróbuj ponownie." });
+    } finally {
+      setInviteBusyId(null);
     }
   };
   const handleResetManagedPassword = async (event: React.FormEvent, targetId: number, targetName: string) => {
@@ -538,6 +459,94 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       setPasswordResetBusy(false);
     }
   };
+  const handlePinCheckout = async (packageId: CreatorPinPackageId) => {
+    setCheckoutError(null);
+    setCheckoutBusy(packageId);
+    try {
+      const response = await fetch("/api/payments/checkout-session", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ packageId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Nie udało się rozpocząć płatności.");
+      const checkoutUrl = new URL(result.url);
+      if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "checkout.stripe.com") {
+        throw new Error("Otrzymany adres płatności Stripe jest nieprawidłowy.");
+      }
+      window.location.assign(checkoutUrl.toString());
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Nie udało się rozpocząć płatności.");
+      setCheckoutBusy(null);
+    }
+  };
+  useEffect(() => {
+    if (!user || user.role !== "admin" || layoutPreview) return;
+    const url = new URL(window.location.href);
+    const paymentResult = url.searchParams.get("payment");
+    const sessionId = url.searchParams.get("session_id");
+    const clearPaymentQuery = () => {
+      url.searchParams.delete("payment");
+      url.searchParams.delete("session_id");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    };
+    if (paymentResult === "cancelled") {
+      setPinPurchaseOpen(true);
+      toast({ title: "Płatność anulowana", description: "Nie pobrano opłaty. Możesz wybrać pakiet ponownie." });
+      clearPaymentQuery();
+      return;
+    }
+    if (paymentResult !== "success" || !sessionId) return;
+
+    let attempts = 0;
+    let timer: number | undefined;
+    let stopped = false;
+    const checkPayment = async () => {
+      try {
+        const response = await fetch(`/api/payments/checkout-session/${encodeURIComponent(sessionId)}`, {
+          credentials: "same-origin", headers: { Accept: "application/json" },
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.status === "paid") {
+            if (stopped) return;
+            setPinBalance(result.pinBalance);
+            setFirstPurchaseBonusGranted(Boolean(result.firstPurchaseBonusGranted));
+            setPaymentPending(false);
+            toast({
+              title: "Płatność potwierdzona",
+              description: result.bonusPins > 0
+                ? `Dodano ${result.bonusPins} pinezek bonusowych. Saldo obejmuje pakiet i bonus.`
+                : "Nowe pinezki zostały dodane do Twojego konta.",
+            });
+            clearPaymentQuery();
+            return;
+          }
+          if (result.status === "failed" || result.status === "expired") {
+            if (stopped) return;
+            setPaymentPending(false);
+            setPinPurchaseOpen(true);
+            setCheckoutError(result.status === "expired" ? "Sesja płatności wygasła. Wybierz pakiet ponownie." : "Płatność nie została zrealizowana. Możesz spróbować ponownie.");
+            clearPaymentQuery();
+            return;
+          }
+        }
+      } catch {
+        // Stripe webhook may still be processing; retry briefly below.
+      }
+      attempts += 1;
+      if (stopped) return;
+      if (attempts >= 20) {
+        setPaymentPending(true);
+        setPinPurchaseOpen(true);
+        toast({ title: "Płatność jest potwierdzana", description: "Saldo zaktualizuje się po potwierdzeniu przez Stripe. Odśwież stronę za chwilę." });
+        return;
+      }
+      timer = window.setTimeout(checkPayment, 1500);
+    };
+    void checkPayment();
+    return () => { stopped = true; if (timer) window.clearTimeout(timer); };
+  }, [user?.id, user?.role, layoutPreview, toast]);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -554,7 +563,6 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   // Form state
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
-  const [newCategory, setNewCategory] = useState("");
   const [newImg, setNewImg] = useState<string | null>(null);
   const [imgProcessing, setImgProcessing] = useState(false);
   // Briefly flashes a green check next to the image upload button after success.
@@ -610,9 +618,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const previewMarkers = useMemo<Marker[]>(() => {
     const now = Date.now();
     return [
-      { id: -1, title: "Złote jajko przy Wałach", description: "Szukaj przy dużym drzewie.", category: "Widok", code: "ZL0TE", lat: 53.4288, lng: 14.5526, imageUrl: null, createdAt: new Date(now - 3_600_000).toISOString(), expiresAt: new Date(now + 2_870_000).toISOString(), activatedAt: new Date(now - 730_000).toISOString(), redemptionCount: 1 },
-      { id: -2, title: "Tajemnicza skrzynka", description: "Rozejrzyj się w pobliżu fontanny.", category: "Zagadka", code: "SK4RB", lat: 53.4323, lng: 14.5591, imageUrl: null, createdAt: new Date(now - 7_200_000).toISOString(), expiresAt: null, activatedAt: null, redemptionCount: 0 },
-      { id: -3, title: "Moneta podróżnika", description: "Podążaj za wskazówką.", category: null, code: "M0NET", lat: 53.4247, lng: 14.5452, imageUrl: null, createdAt: new Date(now - 86_400_000).toISOString(), expiresAt: new Date(now - 3_600_000).toISOString(), activatedAt: new Date(now - 4_200_000).toISOString(), redemptionCount: 1 },
+      { id: -1, title: "Złote jajko przy Wałach", description: "Szukaj przy dużym drzewie.", code: "ZL0TE", lat: 53.4288, lng: 14.5526, imageUrl: null, createdAt: new Date(now - 3_600_000).toISOString(), expiresAt: new Date(now + 2_870_000).toISOString(), activatedAt: new Date(now - 730_000).toISOString(), redemptionCount: 1 },
+      { id: -2, title: "Tajemnicza skrzynka", description: "Rozejrzyj się w pobliżu fontanny.", code: "SK4RB", lat: 53.4323, lng: 14.5591, imageUrl: null, createdAt: new Date(now - 7_200_000).toISOString(), expiresAt: null, activatedAt: null, redemptionCount: 0 },
+      { id: -3, title: "Moneta podróżnika", description: "Podążaj za wskazówką.", code: "M0NET", lat: 53.4247, lng: 14.5452, imageUrl: null, createdAt: new Date(now - 86_400_000).toISOString(), expiresAt: new Date(now - 3_600_000).toISOString(), activatedAt: new Date(now - 4_200_000).toISOString(), redemptionCount: 1 },
     ];
   }, []);
   const { data: liveMarkers = [] } = useListMarkers({
@@ -815,7 +823,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     if (layoutPreview) return;
     if (!clickPos || !newTitle || !newDesc) return;
     createMarker.mutate(
-      { data: { title: newTitle, description: newDesc, category: newCategory.trim() || null, lat: clickPos.lat, lng: clickPos.lng, imageUrl: newImg } },
+      { data: { title: newTitle, description: newDesc, lat: clickPos.lat, lng: clickPos.lng, imageUrl: newImg } },
       {
         onSuccess: async (created) => {
           queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
@@ -830,7 +838,6 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           setIsSheetOpen(false);
           setNewTitle("");
           setNewDesc("");
-          setNewCategory("");
           setNewImg(null);
         },
         onError: (error) => {
@@ -1099,11 +1106,6 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   </span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {(user?.id === 1 || user?.id === 2) && !layoutPreview && (
-                    <a href="/analytics" className="rounded-md border border-green-200 px-2 py-1 text-xs font-semibold text-green-800 hover:bg-green-50 dark:border-green-800 dark:text-green-200 dark:hover:bg-green-950" aria-label="Otwórz analitykę serwisu">
-                      Analityka
-                    </a>
-                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1113,6 +1115,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   >
                     {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                   </Button>
+                  {(user?.id === 1 || user?.id === 2) && (
+                    <a href="/analytics" className="rounded-md px-2 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-50 dark:text-green-300 dark:hover:bg-gray-700">Analityka</a>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1127,32 +1132,32 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
               <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
 
-                {isCreator && (
-                  <section aria-label="Pakiety pinezek dla Kreatorów" className="rounded-xl border border-green-200 bg-green-50 p-3 text-green-950 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
-                    <h2 className="text-sm font-semibold">Pakiety pinezek dla Kreatorów</h2>
-                    <p className="mt-1 text-xs">Saldo: <strong>{pinBalance ?? user?.pinBalance ?? "…"} pinezek</strong></p>
-                    <p className="mt-1 text-xs">1 pinezka = 1 aktywny skarb na mapie. Zakup jest jednorazowy i nie odnawia się automatycznie.</p>
-                    {!firstPurchaseBonusGranted && <p className="mt-1 text-xs font-medium">Nowe konto Kreatora otrzymuje 10 pinezek na start, a przy pierwszym zakupie dostaje dodatkowe {FIRST_PURCHASE_BONUS_PINS} pinezek.</p>}
-                    <p className="mt-1 text-xs">Wybierz pakiet i zapłać bezpiecznie przez Stripe Checkout.</p>
-                    <div className="mt-2 space-y-1">
-                      {CREATOR_PIN_PACKAGES.map((pack) => (
-                        <Button key={pack.id} type="button" variant="outline" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)} className="flex h-auto w-full items-center justify-between rounded-lg border-green-200 bg-white px-2.5 py-2 text-xs text-green-950 hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:text-green-100 dark:hover:bg-green-950/70">
-                          <span className="flex flex-col items-start">{pack.badge && <strong className="mb-1 text-[10px] text-amber-700 dark:text-amber-300">{pack.badge}</strong>}<span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.pins} pinezek</span></span><strong>{pack.amountCents / 100} zł</strong>
-                        </Button>
-                      ))}
-                    </div>
-                    {checkoutError && <p role="alert" className="mt-2 text-xs text-red-700 dark:text-red-300">{checkoutError}</p>}
-                    <p className="mt-2 text-[11px] leading-4">Po potwierdzeniu płatności pinezki automatycznie pojawią się na Twoim koncie.</p>
-                  </section>
-                )}
-
-                {user && !layoutPreview && (
+                {user && !layoutPreview && (hasUnlimitedPins || isCreator) && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
                     {hasUnlimitedPins ? (
                       <>Pinezki: <strong>bez limitu</strong></>
-                    ) : (
-                      <>Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong><span className="block text-xs">Każdy nowy skarb zużywa 1 pinezkę. Dodatkową pulę dokupisz przez Stripe Checkout.</span></>
-                    )}
+                    ) : isCreator ? (
+                      <>
+                        <div>Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong></div>
+                        <span className="mt-1 block text-xs">1 pinezka = 1 aktywny skarb na mapie. Zakup jest jednorazowy i nie odnawia się automatycznie.</span>
+                        {!firstPurchaseBonusGranted && <span className="mt-1 block text-xs font-semibold">Przy pierwszym zakupie otrzymasz dodatkowe {FIRST_PURCHASE_BONUS_PINS} pinezek.</span>}
+                        {paymentPending && <p role="status" className="mt-2 text-xs font-medium">Potwierdzamy płatność. Saldo odświeży się automatycznie.</p>}
+                        {checkoutError && <p role="alert" className="mt-2 text-xs text-red-700 dark:text-red-300">{checkoutError}</p>}
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {CREATOR_PIN_PACKAGES.map((pack) => (
+                            <div key={pack.id} className="rounded-lg border border-amber-200 bg-white p-2 dark:border-amber-800 dark:bg-gray-900">
+                              <div className="min-h-8 text-[10px] font-semibold text-green-800 dark:text-green-300">{pack.badge ?? "Pakiet jednorazowy"}</div>
+                              <div className="font-bold">{pack.name} · {pack.pins}</div>
+                              <div className="mb-2 text-xs">pinezek · {(pack.amountCents / 100).toLocaleString("pl-PL")} zł</div>
+                              <Button type="button" size="sm" className="h-8 w-full bg-green-700 hover:bg-green-800" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)}>
+                                {checkoutBusy === pack.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Kup jednorazowo"}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                        <a href="/cennik.html" className="mt-2 inline-block text-xs font-medium text-green-800 underline dark:text-green-300">Szczegółowy cennik dla Kreatorów</a>
+                      </>
+                    ) : null}
                   </div>
                 )}
 
@@ -1165,9 +1170,6 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       <label className="block text-xs font-medium">Login
                         <Input required minLength={3} maxLength={32} value={accountName} onChange={(event) => setAccountName(event.target.value)} className="mt-1 h-9" autoComplete="off" />
                       </label>
-                      <label className="block text-xs font-medium">Hasło tymczasowe dla {accountRole === "admin" ? "Kreatora (min. 8 znaków)" : "moderatora (min. 15 znaków)"}
-                        <Input required minLength={accountRole === "admin" ? 8 : 15} maxLength={128} type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} className="mt-1 h-9" autoComplete="new-password" />
-                      </label>
                       {user?.role === "master_admin" && (
                         <label className="block text-xs font-medium">Rola
                           <select value={accountRole} onChange={(event) => setAccountRole(event.target.value)} className="mt-1 h-9 w-full rounded-md border bg-white px-2 dark:bg-gray-900">
@@ -1178,9 +1180,41 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       )}
                       {accountError && <p role="alert" className="text-xs text-red-700 dark:text-red-300">{accountError}</p>}
                       <Button type="submit" disabled={accountBusy} className="w-full bg-green-700 hover:bg-green-800">
-                        {accountBusy ? "Tworzenie…" : "Utwórz konto · 10 darmowych pinezek"}
+                        {accountBusy ? "Tworzenie…" : `Utwórz ${accountRole === "admin" ? "Kreatora" : "Moderatora"}`}
                       </Button>
                     </form>
+                    {createdInviteUrl && (
+                      <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-950 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
+                        <strong>Przekaż to zaproszenie nowemu użytkownikowi.</strong>
+                        <p className="mt-1">Link działa 48 godzin i pozwala samodzielnie ustawić hasło.</p>
+                        <a href={createdInviteUrl} className="mt-2 block break-all underline" target="_blank" rel="noreferrer">{createdInviteUrl}</a>
+                        <Button type="button" variant="outline" size="sm" className="mt-2 h-8" onClick={async () => { const ok = await copyToClipboard(createdInviteUrl); toast({ title: ok ? "Link skopiowany" : "Nie udało się skopiować linku" }); }}>Kopiuj zaproszenie</Button>
+                      </div>
+                    )}
+                    {globalOverview && (
+                      <div className="mt-3 rounded-lg bg-green-50 p-2 text-xs dark:bg-green-950/40">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div><strong>{globalOverview.accounts}</strong><span className="block text-gray-600 dark:text-gray-300">Konta w serwisie</span></div>
+                          <div><strong>{globalOverview.admins}</strong><span className="block text-gray-600 dark:text-gray-300">Kreatorzy</span></div>
+                          <div><strong>{globalOverview.markers}</strong><span className="block text-gray-600 dark:text-gray-300">Utworzone skarby</span></div>
+                          <div><strong>{globalOverview.activatedMarkers}</strong><span className="block text-gray-600 dark:text-gray-300">Aktywacje gry</span></div>
+                          <div><strong>{globalOverview.activeMarkers}</strong><span className="block text-gray-600 dark:text-gray-300">Aktywne skarby</span></div>
+                          <div><strong>{globalOverview.totalRedemptions}</strong><span className="block text-gray-600 dark:text-gray-300">Odblokowania kodów</span></div>
+                        </div>
+                        <div className="mt-3 border-t border-green-200 pt-2 dark:border-green-900">
+                          <strong>Statystyki wszystkich Kreatorów</strong>
+                          <div className="mt-2 space-y-1.5">
+                            {globalOverview.creatorUsage.map((creator) => (
+                              <div key={creator.id} className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5 dark:bg-gray-900">
+                                <span className="min-w-0 truncate font-semibold text-green-800 dark:text-green-300">{creator.name}</span>
+                                <span className="shrink-0 text-right text-[10px] text-gray-600 dark:text-gray-300">{creator.markers} skarbów · {creator.activations} aktywacji · {creator.redemptions} odblokowań</span>
+                              </div>
+                            ))}
+                            {globalOverview.creatorUsage.length === 0 && <p className="text-gray-600 dark:text-gray-300">Nie ma jeszcze kont Kreatorów.</p>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-4 space-y-2 border-t pt-3">
                       {managedUsers.map((managed) => (
                         <div key={managed.id} className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-900">
@@ -1189,7 +1223,13 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                             <span>{managed.role === "master_admin" || managed.role === "moderator" ? "Bez limitu pinezek" : `${managed.pinBalance} pinezek`}</span>
                           </div>
                           <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>
-                          <p className="mt-1 text-green-800 dark:text-green-300">Osobna mapa konta · dostęp po zalogowaniu na stronie głównej</p>
+                          {managed.role === "admin" && (
+                            <>
+                              <Button type="button" variant="outline" size="sm" className="mt-2 h-8 w-full" disabled={inviteBusyId === managed.id} onClick={() => void handleReissueInvite(managed.id, managed.name)}>
+                                {inviteBusyId === managed.id ? "Tworzenie linku…" : "Utwórz nowe zaproszenie"}
+                              </Button>
+                            </>
+                          )}
                           {user?.role === "master_admin" && managed.role !== "master_admin" && (
                             passwordResetTargetId === managed.id ? (
                               <form onSubmit={(event) => handleResetManagedPassword(event, managed.id, managed.name)} className="mt-2 space-y-2 rounded-md border border-green-200 p-2 dark:border-green-900">
@@ -1537,14 +1577,11 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 className="resize-none"
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="marker-category">Kategoria (opcjonalnie)</label>
-              <Input id="marker-category" value={newCategory} maxLength={50} onChange={(e) => setNewCategory(e.target.value)} placeholder="np. zagadka, widok, zadanie" />
-            </div>
 
-            {/* ── Image upload section with preview + remove/replace ── */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Zdjęcie (opcjonalne)</label>
+            {/* Optional image settings stay closed until the creator needs them. */}
+            <details className="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+              <summary className="cursor-pointer text-sm font-medium">Dodaj zdjęcie (opcjonalnie)</summary>
+              <div className="mt-3 space-y-2">
 
               {/* Hidden file input — triggered by both "Wybierz" and "Zmień" buttons */}
               <input
@@ -1615,8 +1652,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   )}
                 </Button>
               )}
-              <p className="text-xs text-gray-400">Zdjęcia są automatycznie kompresowane do max 1 MB.</p>
-            </div>
+                <p className="text-xs text-gray-400">Zdjęcia są automatycznie kompresowane do maks. 1 MB.</p>
+              </div>
+            </details>
 
             <Button
               type="submit"
@@ -1657,17 +1695,17 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           <DialogHeader>
             <DialogTitle className="text-green-900 dark:text-green-200">Pakiety pinezek dla Kreatorów</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet jednorazowy. 1 pinezka = 1 aktywny skarb na mapie. Po potwierdzeniu płatności pinezki zostaną dodane do konta.</p>
-          {!firstPurchaseBonusGranted && <p className="text-sm font-medium text-green-800 dark:text-green-300">Nowe konto ma 10 pinezek na start, a pierwszy zakup daje dodatkowe {FIRST_PURCHASE_BONUS_PINS} pinezek.</p>}
-          {paymentPending && <p role="status" className="rounded-md bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">Stripe potwierdza płatność. Saldo pinezek odświeży się po otrzymaniu potwierdzenia.</p>}
-          <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">1 pinezka = 1 aktywny skarb na mapie. Każdy zakup jest jednorazowy. {!firstPurchaseBonusGranted && `Przy pierwszym zakupie otrzymasz dodatkowe ${FIRST_PURCHASE_BONUS_PINS} pinezek.`}</p>
+          {checkoutError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{checkoutError}</p>}
+          <div className="grid grid-cols-2 gap-2">
             {CREATOR_PIN_PACKAGES.map((pack) => (
-              <Button key={pack.id} type="button" variant="outline" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)} className="flex h-auto w-full items-center justify-between rounded-lg border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
-                <span className="flex flex-col items-start">{pack.badge && <strong className="mb-1 text-xs text-amber-700 dark:text-amber-300">{pack.badge}</strong>}<span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.pins} pinezek</span></span><strong>{pack.amountCents / 100} zł</strong>
-              </Button>
+              <div key={pack.id} className="rounded-lg border border-green-200 p-2 text-sm dark:border-green-900">
+                <div className="min-h-8 text-[10px] font-semibold text-green-800 dark:text-green-300">{pack.badge ?? "Pakiet jednorazowy"}</div>
+                <strong>{pack.name}</strong><div>{pack.pins} pinezek · {(pack.amountCents / 100).toLocaleString("pl-PL")} zł</div>
+                <Button type="button" size="sm" className="mt-2 w-full bg-green-700" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)}>{checkoutBusy === pack.id ? "Przekierowanie…" : "Kup"}</Button>
+              </div>
             ))}
           </div>
-          {checkoutError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{checkoutError}</p>}
         </DialogContent>
       </Dialog>
     </div>

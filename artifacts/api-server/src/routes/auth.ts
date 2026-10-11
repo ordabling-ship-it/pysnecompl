@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { randomBytes, timingSafeEqual } from "node:crypto";
-import { eq, and, isNull, or, inArray } from "drizzle-orm";
-import { db, usersTable, markersTable } from "@workspace/db";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { eq, and, isNull, gt, or, inArray } from "drizzle-orm";
+import { db, accountInvitesTable, auditLogsTable, usersTable, markersTable } from "@workspace/db";
 import {
   AdminLoginBody,
   GuestLoginBody,
@@ -20,6 +20,7 @@ const router: IRouter = Router();
 // The timer is started ONLY by the first guest who enters a valid code
 // (see guest-login below) — never by admin creation, never automatically.
 const CODE_TTL_MS = 60 * 60 * 1000;
+const INVITE_PASSWORD_MIN_LENGTH = 8;
 const loginAttempts = new Map<string, { failures: number; windowStartedAt: number; blockedUntil: number }>();
 const dummyHash = hashPassword(randomBytes(32).toString("hex"));
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -98,6 +99,54 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
   res.setHeader("Cache-Control", "no-store");
   setAdminSession(res, user.id);
   res.json({ id: user.id, name: user.name, role: user.role, slug: user.slug, pinBalance: user.pinBalance, firstPurchaseBonusGranted: user.firstPurchaseBonusGranted });
+});
+
+router.get("/auth/maps/:slug", async (req, res): Promise<void> => {
+  const slug = typeof req.params.slug === "string" ? req.params.slug.toLowerCase() : "";
+  if (!/^[a-z0-9][a-z0-9_-]{2,31}$/.test(slug)) {
+    res.status(404).json({ error: "Nie znaleziono tej mapy." });
+    return;
+  }
+  const [map] = await db.select({ name: usersTable.name, slug: usersTable.slug })
+    .from(usersTable).where(and(eq(usersTable.slug, slug), eq(usersTable.role, "admin"))).limit(1);
+  if (!map) {
+    res.status(404).json({ error: "Nie znaleziono tej mapy." });
+    return;
+  }
+  res.setHeader("Cache-Control", "public, max-age=60");
+  res.json(map);
+});
+
+router.post("/auth/activate-account", async (req, res): Promise<void> => {
+  const { token, password } = req.body ?? {};
+  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{40,60}$/.test(token) ||
+      typeof password !== "string" || password.length < INVITE_PASSWORD_MIN_LENGTH || password.length > 128) {
+    res.status(400).json({ error: "Link zaproszenia lub hasło są nieprawidłowe." });
+    return;
+  }
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const now = new Date();
+  const user = await db.transaction(async (tx) => {
+    const [claimed] = await tx.update(accountInvitesTable).set({ usedAt: now })
+      .where(and(eq(accountInvitesTable.tokenHash, tokenHash), isNull(accountInvitesTable.usedAt), gt(accountInvitesTable.expiresAt, now)))
+      .returning({ userId: accountInvitesTable.userId });
+    if (!claimed) return null;
+    const [activated] = await tx.update(usersTable).set({ passwordHash: await hashPassword(password) })
+      .where(eq(usersTable.id, claimed.userId))
+      .returning({ id: usersTable.id, name: usersTable.name, role: usersTable.role, slug: usersTable.slug, pinBalance: usersTable.pinBalance });
+    if (!activated) throw new Error("Invite points to a missing account");
+    await tx.insert(auditLogsTable).values({
+      actorUserId: activated.id, tenantUserId: activated.id, eventType: "account_activated", details: {},
+    });
+    return activated;
+  });
+  if (!user) {
+    res.status(404).json({ error: "Link wygasł albo został już wykorzystany. Poproś opiekuna konta o nowe zaproszenie." });
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  setAdminSession(res, user.id);
+  res.status(200).json(user);
 });
 
 // One-time bootstrap: enabled only when an operator has configured a secret in

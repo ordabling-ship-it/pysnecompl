@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { randomInt } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, markersTable, redemptionsTable, usersTable } from "@workspace/db";
+import { getRoleCapabilities } from "@workspace/api-zod";
 import { requireAdmin, type AdminUser } from "../lib/admin-session";
 import { recordAudit } from "../lib/audit";
 import {
@@ -84,7 +85,7 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
   const { title, description, lat, lng, imageUrl } = parsed.data;
   const category = parsed.data.category?.trim().slice(0, 50) || null;
   const admin = res.locals.adminUser as AdminUser;
-  const hasUnlimitedPins = admin.role === "master_admin" || admin.role === "moderator";
+  const hasUnlimitedPins = getRoleCapabilities(admin.role).hasUnlimitedPins;
 
   if (
     title.trim().length === 0 || title.length > 160 ||
