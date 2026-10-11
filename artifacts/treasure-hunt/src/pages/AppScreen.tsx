@@ -13,6 +13,7 @@ import {
   getGetDiscoveriesQueryKey,
 } from "@workspace/api-client-react";
 import type { Discoveries, Marker, Stats } from "@workspace/api-client-react";
+import { PIN_PACKAGES } from "@workspace/api-zod";
 import type { GuestData } from "@/App";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,11 +50,6 @@ const createIcon = (html: string) => L.divIcon({
   popupAnchor: [0, -32],
 });
 
-const CREATOR_PIN_PACKAGES = [
-  { name: "Mały", amount: 50, price: 249 },
-  { name: "Średni", amount: 100, price: 449 },
-  { name: "Duży", amount: 250, price: 849 },
-] as const;
 const BUYCOFFEE_URL = "https://buycoffee.to/czosnek";
 
 // ─────────────────────────────────────────────
@@ -215,7 +211,7 @@ function buildGuestPopupHtml(g: GuestData, isDark = false): string {
 // Types
 // ─────────────────────────────────────────────
 type AppScreenProps = {
-  user: { id: number; name: string; role: string; pinBalance?: number } | null;
+  user: { id: number; name: string; role: string; slug?: string; pinBalance?: number } | null;
   guestData: GuestData | null;
   onLogout: () => void;
   theme: "light" | "dark";
@@ -372,13 +368,20 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const { toast } = useToast();
   const [pinBalance, setPinBalance] = useState<number | null>(user?.pinBalance ?? null);
   const [pinPurchaseOpen, setPinPurchaseOpen] = useState(false);
-  const [managedUsers, setManagedUsers] = useState<Array<{ id: number; name: string; slug: string; role: string; pinBalance: number; totalPins: number; discoveries: number; redemptions: number }>>([]);
+  const [managedUsers, setManagedUsers] = useState<Array<{ id: number; name: string; slug: string; role: string; parentUserId: number | null; pinBalance: number; totalPins: number; discoveries: number; redemptions: number }>>([]);
+  const [globalOverview, setGlobalOverview] = useState<{ accounts: number; admins: number; moderators: number; markers: number; activatedMarkers: number; activeMarkers: number; expiredMarkers: number; totalRedemptions: number; creatorUsage: Array<{ id: number; name: string; slug: string; pinBalance: number; markers: number; activations: number; activeMarkers: number; redemptions: number }> } | null>(null);
   const [managedActivity, setManagedActivity] = useState<Array<{ id: number; eventType: string; createdAt: string; actorName: string | null; details: Record<string, string | number | boolean | null> }>>([]);
   const [accountName, setAccountName] = useState("");
-  const [accountPassword, setAccountPassword] = useState("");
   const [accountRole, setAccountRole] = useState("admin");
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [accountBusy, setAccountBusy] = useState(false);
+  const [inviteBusyId, setInviteBusyId] = useState<number | null>(null);
+  const [topUpTargetId, setTopUpTargetId] = useState<number | null>(null);
+  const [topUpPackageId, setTopUpPackageId] = useState<(typeof PIN_PACKAGES)[number]["id"]>("small");
+  const [topUpReference, setTopUpReference] = useState("");
+  const [topUpError, setTopUpError] = useState<string | null>(null);
+  const [topUpBusy, setTopUpBusy] = useState(false);
   const [passwordResetTargetId, setPasswordResetTargetId] = useState<number | null>(null);
   const [passwordResetValue, setPasswordResetValue] = useState("");
   const [passwordResetConfirm, setPasswordResetConfirm] = useState("");
@@ -388,6 +391,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const loadManagedUsers = async () => {
     const response = await fetch("/api/control/users", { credentials: "same-origin", headers: { Accept: "application/json" } });
     if (response.ok) setManagedUsers(await response.json());
+    const overviewResponse = await fetch("/api/control/overview", { credentials: "same-origin", headers: { Accept: "application/json" } });
+    if (overviewResponse.ok) setGlobalOverview(await overviewResponse.json());
     const activityResponse = await fetch("/api/control/activity", { credentials: "same-origin", headers: { Accept: "application/json" } });
     if (activityResponse.ok) setManagedActivity(await activityResponse.json());
   };
@@ -401,20 +406,54 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     try {
       const response = await fetch("/api/control/users", {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ username: accountName, password: accountPassword, role: accountRole }),
+        body: JSON.stringify({ username: accountName, role: accountRole }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Nie udało się utworzyć konta.");
-      setAccountName(""); setAccountPassword("");
+      setAccountName(""); setCreatedInviteUrl(result.inviteUrl ?? null);
       await loadManagedUsers();
       toast({
         title: "Konto utworzone",
-        description: `Mapa: ${window.location.origin}/${result.slug} · ${result.role === "moderator" ? "brak limitu pinezek" : "saldo początkowe: 10 pinezek"}.`,
+        description: `Mapa /${result.slug} · zaproszenie ważne do ${new Date(result.inviteExpiresAt).toLocaleString("pl-PL")}.`,
       });
     } catch (error) {
       setAccountError(error instanceof Error ? error.message : "Nie udało się utworzyć konta.");
     } finally {
       setAccountBusy(false);
+    }
+  };
+  const handleReissueInvite = async (targetId: number, targetName: string) => {
+    setInviteBusyId(targetId);
+    try {
+      const response = await fetch(`/api/control/users/${targetId}/invite`, { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Nie udało się utworzyć zaproszenia.");
+      setCreatedInviteUrl(result.inviteUrl);
+      toast({ title: "Nowe zaproszenie gotowe", description: `Link dla ${targetName} zastąpił poprzedni link.` });
+    } catch (error) {
+      toast({ variant: "destructive", title: "Błąd zaproszenia", description: error instanceof Error ? error.message : "Spróbuj ponownie." });
+    } finally {
+      setInviteBusyId(null);
+    }
+  };
+  const handlePinTopup = async (event: React.FormEvent, targetId: number, targetName: string) => {
+    event.preventDefault();
+    setTopUpError(null);
+    setTopUpBusy(true);
+    try {
+      const response = await fetch(`/api/control/users/${targetId}/pin-topups`, {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ packageId: topUpPackageId, paymentReference: topUpReference }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Nie udało się dodać pinezek.");
+      setTopUpTargetId(null); setTopUpReference("");
+      await loadManagedUsers();
+      toast({ title: "Pakiet rozliczony", description: `Dodano ${result.addedPins} pinezek dla ${targetName}.` });
+    } catch (error) {
+      setTopUpError(error instanceof Error ? error.message : "Nie udało się dodać pinezek.");
+    } finally {
+      setTopUpBusy(false);
     }
   };
   const handleResetManagedPassword = async (event: React.FormEvent, targetId: number, targetName: string) => {
@@ -729,7 +768,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           const ok = await copyToClipboard(created.code);
           toast({
             title: "Skarb dodany!",
-            description: ok ? `Kod ${created.code} skopiowany do schowka` : `Kod: ${created.code}`,
+            description: `${ok ? `Kod ${created.code} skopiowany do schowka` : `Kod: ${created.code}`}${user?.slug ? ` · Mapa: ${window.location.origin}/${user.slug}` : ""}`,
           });
           setIsSheetOpen(false);
           setNewTitle("");
@@ -1025,27 +1064,16 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
 
               <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
 
-                {isCreator && (
-                  <section aria-label="Pakiety pinezek dla Kreatorów" className="rounded-xl border border-green-200 bg-green-50 p-3 text-green-950 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
-                    <h2 className="text-sm font-semibold">Pakiety pinezek dla Kreatorów</h2>
-                    <p className="mt-1 text-xs">Wybierz pakiet i przejdź do BuyCoffee.</p>
-                    <div className="mt-2 space-y-1">
-                      {CREATOR_PIN_PACKAGES.map((pack) => (
-                        <a key={pack.name} href={BUYCOFFEE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-lg border border-green-200 bg-white px-2.5 py-2 text-xs hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:hover:bg-green-950/70">
-                          <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł ↗</strong>
-                        </a>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[11px] leading-4">W dedykacji na BuyCoffee wpisz login i nazwę pakietu. Po potwierdzeniu wpłaty pinezki dodamy ręcznie.</p>
-                  </section>
-                )}
-
                 {user && !layoutPreview && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
                     {hasUnlimitedPins ? (
                       <>Pinezki: <strong>bez limitu</strong></>
                     ) : (
-                      <>Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong><span className="block text-xs">Każdy nowy skarb zużywa 1 pinezkę. Po wykorzystaniu puli możesz wybrać pakiet BuyCoffee.</span></>
+                      <>
+                        Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong>
+                        <span className="mt-1 block text-xs">Każdy nowy skarb zużywa 1 pinezkę.</span>
+                        <Button type="button" size="sm" className="mt-2 h-8 bg-green-700 hover:bg-green-800" onClick={() => setPinPurchaseOpen(true)}>Pakiety pinezek</Button>
+                      </>
                     )}
                   </div>
                 )}
@@ -1059,9 +1087,6 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       <label className="block text-xs font-medium">Login
                         <Input required minLength={3} maxLength={32} value={accountName} onChange={(event) => setAccountName(event.target.value)} className="mt-1 h-9" autoComplete="off" />
                       </label>
-                      <label className="block text-xs font-medium">Hasło tymczasowe dla {accountRole === "admin" ? "Kreatora (min. 8 znaków)" : "moderatora (min. 15 znaków)"}
-                        <Input required minLength={accountRole === "admin" ? 8 : 15} maxLength={128} type="password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} className="mt-1 h-9" autoComplete="new-password" />
-                      </label>
                       {user?.role === "master_admin" && (
                         <label className="block text-xs font-medium">Rola
                           <select value={accountRole} onChange={(event) => setAccountRole(event.target.value)} className="mt-1 h-9 w-full rounded-md border bg-white px-2 dark:bg-gray-900">
@@ -1072,9 +1097,41 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       )}
                       {accountError && <p role="alert" className="text-xs text-red-700 dark:text-red-300">{accountError}</p>}
                       <Button type="submit" disabled={accountBusy} className="w-full bg-green-700 hover:bg-green-800">
-                        {accountBusy ? "Tworzenie…" : "Utwórz konto · 10 darmowych pinezek"}
+                        {accountBusy ? "Tworzenie…" : `Utwórz ${accountRole === "admin" ? "Kreatora" : "Moderatora"}`}
                       </Button>
                     </form>
+                    {createdInviteUrl && (
+                      <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-950 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
+                        <strong>Przekaż to zaproszenie nowemu użytkownikowi.</strong>
+                        <p className="mt-1">Link działa 48 godzin i pozwala samodzielnie ustawić hasło.</p>
+                        <a href={createdInviteUrl} className="mt-2 block break-all underline" target="_blank" rel="noreferrer">{createdInviteUrl}</a>
+                        <Button type="button" variant="outline" size="sm" className="mt-2 h-8" onClick={async () => { const ok = await copyToClipboard(createdInviteUrl); toast({ title: ok ? "Link skopiowany" : "Nie udało się skopiować linku" }); }}>Kopiuj zaproszenie</Button>
+                      </div>
+                    )}
+                    {globalOverview && (
+                      <div className="mt-3 rounded-lg bg-green-50 p-2 text-xs dark:bg-green-950/40">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div><strong>{globalOverview.accounts}</strong><span className="block text-gray-600 dark:text-gray-300">Konta w serwisie</span></div>
+                          <div><strong>{globalOverview.admins}</strong><span className="block text-gray-600 dark:text-gray-300">Kreatorzy</span></div>
+                          <div><strong>{globalOverview.markers}</strong><span className="block text-gray-600 dark:text-gray-300">Utworzone skarby</span></div>
+                          <div><strong>{globalOverview.activatedMarkers}</strong><span className="block text-gray-600 dark:text-gray-300">Aktywacje gry</span></div>
+                          <div><strong>{globalOverview.activeMarkers}</strong><span className="block text-gray-600 dark:text-gray-300">Aktywne skarby</span></div>
+                          <div><strong>{globalOverview.totalRedemptions}</strong><span className="block text-gray-600 dark:text-gray-300">Odblokowania kodów</span></div>
+                        </div>
+                        <div className="mt-3 border-t border-green-200 pt-2 dark:border-green-900">
+                          <strong>Statystyki wszystkich Kreatorów</strong>
+                          <div className="mt-2 space-y-1.5">
+                            {globalOverview.creatorUsage.map((creator) => (
+                              <div key={creator.id} className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5 dark:bg-gray-900">
+                                <a href={`/${creator.slug}`} target="_blank" rel="noreferrer" className="min-w-0 truncate font-semibold text-green-800 underline dark:text-green-300">{creator.name}</a>
+                                <span className="shrink-0 text-right text-[10px] text-gray-600 dark:text-gray-300">{creator.markers} skarbów · {creator.activations} aktywacji · {creator.redemptions} odblokowań</span>
+                              </div>
+                            ))}
+                            {globalOverview.creatorUsage.length === 0 && <p className="text-gray-600 dark:text-gray-300">Nie ma jeszcze kont Kreatorów.</p>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-4 space-y-2 border-t pt-3">
                       {managedUsers.map((managed) => (
                         <div key={managed.id} className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-900">
@@ -1084,6 +1141,33 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                           </div>
                           <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>
                           <a className="mt-1 inline-block text-green-800 underline dark:text-green-300" href={`/${managed.slug}`} target="_blank" rel="noreferrer">Otwórz mapę · /{managed.slug}</a>
+                          {managed.role === "admin" && (
+                            <>
+                              <Button type="button" variant="outline" size="sm" className="mt-2 h-8 w-full" disabled={inviteBusyId === managed.id} onClick={() => void handleReissueInvite(managed.id, managed.name)}>
+                                {inviteBusyId === managed.id ? "Tworzenie linku…" : "Utwórz nowe zaproszenie"}
+                              </Button>
+                              {topUpTargetId === managed.id ? (
+                                <form onSubmit={(event) => void handlePinTopup(event, managed.id, managed.name)} className="mt-2 space-y-2 rounded-md border border-amber-200 p-2 dark:border-amber-900">
+                                  <label className="block">Pakiet
+                                    <select value={topUpPackageId} onChange={(event) => setTopUpPackageId(event.target.value as typeof topUpPackageId)} className="mt-1 h-9 w-full rounded-md border bg-white px-2 dark:bg-gray-800">
+                                      {PIN_PACKAGES.map((pack) => <option key={pack.id} value={pack.id}>{pack.name} · {pack.pins} pinezek · {pack.pricePln} zł</option>)}
+                                    </select>
+                                  </label>
+                                  <label className="block">Id wpłaty lub opis potwierdzenia
+                                    <Input required minLength={3} maxLength={160} value={topUpReference} onChange={(event) => setTopUpReference(event.target.value)} className="mt-1 h-9" placeholder="np. BMC-2026-001" />
+                                  </label>
+                                  <p className="text-[11px] text-gray-600 dark:text-gray-300">Uzupełnij po sprawdzeniu wpłaty w BuyCoffee. Ten sam identyfikator można rozliczyć tylko raz.</p>
+                                  {topUpError && <p role="alert" className="text-xs text-red-700 dark:text-red-300">{topUpError}</p>}
+                                  <div className="flex gap-2">
+                                    <Button type="submit" size="sm" disabled={topUpBusy} className="flex-1 bg-green-700">{topUpBusy ? "Zapisywanie…" : "Dodaj pinezki"}</Button>
+                                    <Button type="button" size="sm" variant="outline" onClick={() => { setTopUpTargetId(null); setTopUpError(null); }}>Anuluj</Button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <Button type="button" variant="outline" size="sm" className="mt-2 h-8 w-full" onClick={() => { setTopUpTargetId(managed.id); setTopUpError(null); }}>Rozlicz wpłatę i dodaj pakiet</Button>
+                              )}
+                            </>
+                          )}
                           {user?.role === "master_admin" && managed.role !== "master_admin" && (
                             passwordResetTargetId === managed.id ? (
                               <form onSubmit={(event) => handleResetManagedPassword(event, managed.id, managed.name)} className="mt-2 space-y-2 rounded-md border border-green-200 p-2 dark:border-green-900">
@@ -1432,9 +1516,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
               />
             </div>
 
-            {/* ── Image upload section with preview + remove/replace ── */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Zdjęcie (opcjonalne)</label>
+            {/* Optional image settings stay closed until the creator needs them. */}
+            <details className="rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+              <summary className="cursor-pointer text-sm font-medium">Dodaj zdjęcie (opcjonalnie)</summary>
+              <div className="mt-3 space-y-2">
 
               {/* Hidden file input — triggered by both "Wybierz" and "Zmień" buttons */}
               <input
@@ -1505,8 +1590,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   )}
                 </Button>
               )}
-              <p className="text-xs text-gray-400">Zdjęcia są automatycznie kompresowane do max 1 MB.</p>
-            </div>
+                <p className="text-xs text-gray-400">Zdjęcia są automatycznie kompresowane do maks. 1 MB.</p>
+              </div>
+            </details>
 
             <Button
               type="submit"
@@ -1547,15 +1633,15 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           <DialogHeader>
             <DialogTitle className="text-green-900 dark:text-green-200">Pakiety pinezek dla Kreatorów</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet i przejdź do BuyCoffee. W dedykacji wpisz login oraz nazwę pakietu; po potwierdzeniu wpłaty pinezki dodamy ręcznie.</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet i przejdź do BuyCoffee. W dedykacji wpisz login <strong>{user?.name}</strong> oraz nazwę pakietu.</p>
           <div className="space-y-2">
-            {CREATOR_PIN_PACKAGES.map((pack) => (
-              <a key={pack.name} href={BUYCOFFEE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-lg border border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
-                <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł · BuyCoffee ↗</strong>
+            {PIN_PACKAGES.map((pack) => (
+              <a key={pack.id} href={BUYCOFFEE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-lg border border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
+                <span><strong>{pack.name}</strong> · {pack.pins} pinezek</span><strong>{pack.pricePln} zł · BuyCoffee ↗</strong>
               </a>
             ))}
           </div>
-          <p className="text-xs text-amber-800 dark:text-amber-300">Płatność nie dodaje pinezek automatycznie. Saldo uzupełnimy po potwierdzeniu wpłaty.</p>
+          <p className="text-xs text-amber-800 dark:text-amber-300">Po wpłacie opiekun sprawdzi ją w BuyCoffee i ręcznie doda pinezki do Twojego konta.</p>
         </DialogContent>
       </Dialog>
     </div>

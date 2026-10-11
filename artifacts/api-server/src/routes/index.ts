@@ -6,11 +6,13 @@ import redemptionsRouter from "./redemptions";
 import statsRouter from "./stats";
 import discoveriesRouter from "./discoveries";
 import controlRouter from "./control";
+import pinPackagesRouter from "./pinPackages";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(pinPackagesRouter);
 router.use(markersRouter);
 router.use(redemptionsRouter);
 router.use(statsRouter);

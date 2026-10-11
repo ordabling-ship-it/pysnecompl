@@ -38,6 +38,28 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at DESC)");
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_tenant_user_id_idx ON audit_logs (tenant_user_id)");
 
+  await pool.query(`CREATE TABLE IF NOT EXISTS account_invites (
+    id serial PRIMARY KEY,
+    user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_by_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    token_hash text NOT NULL UNIQUE,
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS account_invites_user_id_idx ON account_invites (user_id)");
+  await pool.query(`CREATE TABLE IF NOT EXISTS pin_topups (
+    id serial PRIMARY KEY,
+    user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    granted_by_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    package_id text NOT NULL,
+    pins integer NOT NULL CHECK (pins > 0),
+    price_pln integer NOT NULL CHECK (price_pln > 0),
+    payment_reference text NOT NULL UNIQUE,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS pin_topups_user_id_idx ON pin_topups (user_id)");
+
   await pool.query(
     "ALTER TABLE markers ADD COLUMN IF NOT EXISTS archived_at timestamptz",
   );

@@ -45,10 +45,13 @@ function getAutoTheme(): "light" | "dark" {
 }
 
 function MainApp() {
-  const tenantSlug = window.location.pathname.split("/").filter(Boolean)[0]?.toLowerCase();
+  const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+  const routeMode = pathname === "/panel" ? "panel" : pathname === "/activate" ? "activate" : "player";
+  const tenantSlug = routeMode === "player" ? pathname.split("/").filter(Boolean)[0]?.toLowerCase() : undefined;
+  const activationToken = routeMode === "activate" ? new URLSearchParams(window.location.search).get("token") : null;
   const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
-  const [user, setUser] = useState<{ id: number; name: string; role: string; pinBalance?: number } | null>(
-    layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", pinBalance: 10 } : null,
+  const [user, setUser] = useState<{ id: number; name: string; role: string; slug?: string; pinBalance?: number } | null>(
+    layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", slug: "podglad", pinBalance: 10 } : null,
   );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
   const [hydrating, setHydrating] = useState(!layoutPreview);
@@ -92,7 +95,7 @@ function MainApp() {
 
   // Restore the signed admin cookie first, then fall back to the saved guest code.
   useEffect(() => {
-    if (layoutPreview || !termsAccepted) return;
+    if (layoutPreview || (routeMode === "player" && !termsAccepted) || routeMode === "activate") return;
     let mounted = true;
     const restoreSession = async () => {
       try {
@@ -101,7 +104,7 @@ function MainApp() {
           headers: { Accept: "application/json" },
         });
         if (response.ok) {
-          const admin = await response.json() as { id: number; name: string; role: string; pinBalance?: number };
+          const admin = await response.json() as { id: number; name: string; role: string; slug?: string; pinBalance?: number };
           if (mounted) setUser(admin);
           localStorage.removeItem(GUEST_SESSION_KEY);
           return;
@@ -110,6 +113,7 @@ function MainApp() {
         // A missing or expired admin cookie falls through to guest restoration.
       }
 
+      if (routeMode !== "player") return;
       const saved = localStorage.getItem(GUEST_SESSION_KEY);
       if (!saved) return;
       try {
@@ -126,9 +130,9 @@ function MainApp() {
       if (mounted) setHydrating(false);
     });
     return () => { mounted = false; };
-  }, [layoutPreview, termsAccepted]);
+  }, [layoutPreview, termsAccepted, routeMode, tenantSlug]);
 
-  const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number }) => {
+  const handleAdminLogin = (data: { id: number; name: string; role: string; slug?: string; pinBalance?: number }) => {
     setUser(data);
     setLoginMsg(`Witaj, ${data.name}!`);
   };
@@ -154,7 +158,11 @@ function MainApp() {
     }
   };
 
-  if (!termsAccepted) {
+  if (routeMode === "activate") {
+    return <AuthScreen onLoginAdmin={handleAdminLogin} onLoginGuest={handleGuestLogin} mode="activate" activationToken={activationToken ?? ""} theme={theme} onToggleTheme={handleToggleTheme} />;
+  }
+
+  if (routeMode === "player" && !termsAccepted) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-gradient-to-br from-green-900 to-amber-600 p-4 dark:from-gray-900 dark:to-gray-800">
         <section className="w-full max-w-lg rounded-2xl bg-white p-7 text-center shadow-2xl dark:border dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 sm:p-9">
@@ -198,6 +206,7 @@ function MainApp() {
         onLoginAdmin={handleAdminLogin}
         onLoginGuest={handleGuestLogin}
         tenantSlug={tenantSlug}
+        mode={routeMode === "panel" ? "panel" : "player"}
         theme={theme}
         onToggleTheme={handleToggleTheme}
       />
@@ -221,6 +230,8 @@ function MainApp() {
 function Router() {
   return (
     <Switch>
+      <Route path="/panel" component={MainApp} />
+      <Route path="/activate" component={MainApp} />
       <Route path="/" component={MainApp} />
       <Route path="/:tenantSlug" component={MainApp} />
       <Route component={NotFound} />
