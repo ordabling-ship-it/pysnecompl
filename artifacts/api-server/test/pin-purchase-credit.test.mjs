@@ -86,10 +86,11 @@ test("public pricing page lists only the four one-time creator packages", async 
   assert.match(appScreen, /const isCreator = user\?\.role === "admin"/);
   assert.match(appScreen, /user && !layoutPreview && \(hasUnlimitedPins \|\| isCreator\)/, "only creators and unlimited-pin managers see their balance panel");
   assert.match(appScreen, /CREATOR_PIN_PACKAGES\.map/);
-  assert.match(appScreen, /user\?\.id === 1 \|\| user\?\.id === 2/, "only the two authorized internal IDs see the analytics link");
+  assert.match(appScreen, /user\?\.canAccessAnalytics/, "only accounts granted analytics access by the server see the analytics link");
   assert.doesNotMatch(appScreen, /BuyCoffee|buycoffee|pin-topups/);
   assert.match(app, /routeMode === "analytics" && user/);
-  assert.match(app, /user\.id !== 1 && user\.id !== 2/);
+  assert.match(app, /!user\.canAccessAnalytics/);
+  assert.match(app, /<Route path="\/analytics" component=\{MainApp\} \/>/, "the client router must render the analytics route");
   assert.match(paymentRoute, /router\.post\("\/payments\/checkout-session", requireRole\("admin"\)/);
   assert.match(paymentRoute, /mode: "payment"/);
   assert.match(paymentRoute, /session\.amount_total !== purchase\.amountCents/);

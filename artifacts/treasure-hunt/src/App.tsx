@@ -51,7 +51,7 @@ function MainApp() {
   const routeMode = pathname === "/panel" ? "panel" : pathname === "/activate" ? "activate" : pathname === "/analytics" ? "analytics" : "player";
   const activationToken = routeMode === "activate" ? new URLSearchParams(window.location.search).get("token") : null;
   const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
-  const [user, setUser] = useState<{ id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null>(
+  const [user, setUser] = useState<{ id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean; canAccessAnalytics?: boolean } | null>(
     layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", slug: "podglad", pinBalance: 10 } : null,
   );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
@@ -105,7 +105,7 @@ function MainApp() {
           headers: { Accept: "application/json" },
         });
         if (response.ok) {
-          const admin = await response.json() as { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean };
+          const admin = await response.json() as { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean; canAccessAnalytics?: boolean };
           if (mounted) setUser(admin);
           localStorage.removeItem(GUEST_SESSION_KEY);
           return;
@@ -133,7 +133,7 @@ function MainApp() {
     return () => { mounted = false; };
   }, [layoutPreview, termsAccepted, routeMode]);
 
-  const handleAdminLogin = (data: { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean }) => {
+  const handleAdminLogin = (data: { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean; canAccessAnalytics?: boolean }) => {
     setUser(data);
     setLoginMsg(`Witaj, ${data.name}!`);
   };
@@ -214,7 +214,7 @@ function MainApp() {
   }
 
   if (routeMode === "analytics" && user) {
-    if (user.id !== 1 && user.id !== 2) {
+    if (!user.canAccessAnalytics) {
       return <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6 text-center dark:bg-gray-950 dark:text-gray-100"><section className="max-w-md rounded-2xl border bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900"><h1 className="text-xl font-bold">Brak dostępu</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Panel analityczny jest dostępny tylko dla uprawnionych kont.</p><a href="/" className="mt-5 inline-block rounded-lg bg-green-800 px-4 py-2 font-semibold text-white">Wróć do strony głównej</a></section></main>;
     }
     return <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">Ładowanie analityki…</div>}><AnalyticsScreen userId={user.id} userName={user.name} theme={theme} onToggleTheme={handleToggleTheme} /></Suspense>;
@@ -239,6 +239,7 @@ function Router() {
     <Switch>
       <Route path="/panel" component={MainApp} />
       <Route path="/activate" component={MainApp} />
+      <Route path="/analytics" component={MainApp} />
       <Route path="/" component={MainApp} />
       <Route component={NotFound} />
     </Switch>

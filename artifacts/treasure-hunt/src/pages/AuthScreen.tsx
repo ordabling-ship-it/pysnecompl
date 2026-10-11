@@ -9,7 +9,7 @@ import { Loader2, Key, User, ArrowLeft, Coins, AlertCircle, Sun, Moon } from "lu
 import { getOrCreateGuestToken, type GuestData } from "@/App";
 
 type AuthScreenProps = {
-  onLoginAdmin: (user: { id: number; name: string; role: string; slug?: string; pinBalance?: number }) => void;
+  onLoginAdmin: (user: { id: number; name: string; role: string; slug?: string; pinBalance?: number; canAccessAnalytics?: boolean }) => void;
   onLoginGuest: (guestData: GuestData) => void;
   mode?: "player" | "panel" | "activate";
   activationToken?: string;

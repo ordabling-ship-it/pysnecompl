@@ -31,6 +31,7 @@ export interface AuthResponse {
   slug?: string;
   pinBalance?: number;
   firstPurchaseBonusGranted?: boolean;
+  canAccessAnalytics: boolean;
 }
 
 export interface GuestAuthResponse {

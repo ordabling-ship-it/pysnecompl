@@ -13,6 +13,7 @@ import {
 } from "../lib/admin-session";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { recordAudit } from "../lib/audit";
+import { hasAnalyticsAccess } from "../lib/analytics-core.mjs";
 
 const router: IRouter = Router();
 
@@ -98,7 +99,7 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
   await recordAudit("admin_login", user.id, user.id, {});
   res.setHeader("Cache-Control", "no-store");
   setAdminSession(res, user.id);
-  res.json({ id: user.id, name: user.name, role: user.role, slug: user.slug, pinBalance: user.pinBalance, firstPurchaseBonusGranted: user.firstPurchaseBonusGranted });
+  res.json({ id: user.id, name: user.name, role: user.role, slug: user.slug, pinBalance: user.pinBalance, firstPurchaseBonusGranted: user.firstPurchaseBonusGranted, canAccessAnalytics: hasAnalyticsAccess(user) });
 });
 
 router.get("/auth/maps/:slug", async (req, res): Promise<void> => {
@@ -191,7 +192,7 @@ router.post("/auth/bootstrap-master", async (req, res): Promise<void> => {
   await recordAudit("master_bootstrapped", accounts.master.id, accounts.master.id, { username: accounts.master.name });
   await recordAudit("moderator_created", accounts.master.id, accounts.moderator.id, { username: accounts.moderator.name });
   setAdminSession(res, accounts.master.id);
-  res.status(201).json({ ...accounts.master, slug: "don_hudinni", pinBalance: 10 });
+  res.status(201).json({ ...accounts.master, slug: "don_hudinni", pinBalance: 10, canAccessAnalytics: true });
 });
 
 router.get("/auth/session", async (req, res): Promise<void> => {
@@ -202,7 +203,7 @@ router.get("/auth/session", async (req, res): Promise<void> => {
     res.status(401).json({ error: "Sesja administratora wygasła." });
     return;
   }
-  res.json(user);
+  res.json({ ...user, canAccessAnalytics: hasAnalyticsAccess(user) });
 });
 
 router.post("/auth/logout", (_req, res): void => {

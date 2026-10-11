@@ -431,10 +431,13 @@ components:
           type: integer
         firstPurchaseBonusGranted:
           type: boolean
+        canAccessAnalytics:
+          type: boolean
       required:
         - id
         - name
         - role
+        - canAccessAnalytics
 
     GuestAuthResponse:
       type: object

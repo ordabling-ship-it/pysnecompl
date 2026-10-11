@@ -209,7 +209,7 @@ function buildGuestPopupHtml(g: GuestData, isDark = false): string {
 // Types
 // ─────────────────────────────────────────────
 type AppScreenProps = {
-  user: { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean } | null;
+  user: { id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean; canAccessAnalytics?: boolean } | null;
   guestData: GuestData | null;
   onLogout: () => void;
   theme: "light" | "dark";
@@ -1115,7 +1115,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   >
                     {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                   </Button>
-                  {(user?.id === 1 || user?.id === 2) && (
+                  {user?.canAccessAnalytics && (
                     <a href="/analytics" className="rounded-md px-2 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-50 dark:text-green-300 dark:hover:bg-gray-700">Analityka</a>
                   )}
                   <Button
