@@ -38,6 +38,22 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at DESC)");
   await pool.query("CREATE INDEX IF NOT EXISTS audit_logs_tenant_user_id_idx ON audit_logs (tenant_user_id)");
 
+  await pool.query(`CREATE TABLE IF NOT EXISTS stripe_pin_purchases (
+    id serial PRIMARY KEY,
+    creator_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    stripe_session_id text NOT NULL,
+    stripe_payment_intent_id text,
+    package_id text NOT NULL,
+    pins integer NOT NULL CHECK (pins > 0),
+    amount_cents integer NOT NULL CHECK (amount_cents > 0),
+    currency text NOT NULL DEFAULT 'pln',
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'failed', 'expired')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    paid_at timestamptz
+  )`);
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS stripe_pin_purchases_session_unique ON stripe_pin_purchases (stripe_session_id)");
+  await pool.query("CREATE INDEX IF NOT EXISTS stripe_pin_purchases_creator_created_idx ON stripe_pin_purchases (creator_user_id, created_at)");
+
   await pool.query(
     "ALTER TABLE markers ADD COLUMN IF NOT EXISTS archived_at timestamptz",
   );

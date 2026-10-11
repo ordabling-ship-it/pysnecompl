@@ -8,6 +8,8 @@ export const markersTable = pgTable("markers", {
   ownerUserId: integer("owner_user_id").notNull().references(() => usersTable.id, { onDelete: "restrict" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
+  // Codes are globally unique across creator maps so the shared homepage can
+  // resolve every guest code without a username-specific URL.
   code: text("code").notNull().unique(),
   lat: doublePrecision("lat").notNull(),
   lng: doublePrecision("lng").notNull(),

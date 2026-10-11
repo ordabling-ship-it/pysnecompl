@@ -11,7 +11,7 @@ const MANAGER_ROLES = ["master_admin", "moderator"];
 router.get("/control/users", requireRole(...MANAGER_ROLES), async (_req, res): Promise<void> => {
   const actor = res.locals.adminUser as AdminUser;
   const users = await db.select({
-    id: usersTable.id, name: usersTable.name, slug: usersTable.slug,
+    id: usersTable.id, name: usersTable.name,
     role: usersTable.role, parentUserId: usersTable.parentUserId,
     pinBalance: usersTable.pinBalance, createdAt: usersTable.createdAt,
   }).from(usersTable).where(
@@ -61,9 +61,9 @@ router.post("/control/users", requireRole(...MANAGER_ROLES), async (req, res): P
   const [user] = await db.insert(usersTable).values({
     name: username, slug, email: `${slug}@accounts.pysne.invalid`,
     passwordHash: await hashPassword(password), role, parentUserId: actor.id, pinBalance: 10,
-  }).returning({ id: usersTable.id, name: usersTable.name, slug: usersTable.slug, role: usersTable.role, pinBalance: usersTable.pinBalance });
+  }).returning({ id: usersTable.id, name: usersTable.name, role: usersTable.role, pinBalance: usersTable.pinBalance });
   req.log.info({ userId: user.id, actorId: actor.id, role }, "Managed account created");
-  await recordAudit("account_created", actor.id, user.id, { username: user.name, role: user.role, slug: user.slug });
+  await recordAudit("account_created", actor.id, user.id, { username: user.name, role: user.role, slug });
   res.status(201).json(user);
 });
 

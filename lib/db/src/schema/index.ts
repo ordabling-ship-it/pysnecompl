@@ -4,3 +4,4 @@ export * from "./redemptions";
 export * from "./guestDiscoveries";
 export * from "./settings";
 export * from "./auditLogs";
+export * from "./stripePinPurchases";

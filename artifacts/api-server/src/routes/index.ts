@@ -6,6 +6,7 @@ import redemptionsRouter from "./redemptions";
 import statsRouter from "./stats";
 import discoveriesRouter from "./discoveries";
 import controlRouter from "./control";
+import paymentsRouter from "./payments";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(redemptionsRouter);
 router.use(statsRouter);
 router.use(discoveriesRouter);
 router.use(controlRouter);
+router.use(paymentsRouter);
 
 export default router;

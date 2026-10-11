@@ -36,7 +36,6 @@ export const AdminLoginResponse = zod.object({
  */
 export const GuestLoginBody = zod.object({
   code: zod.string(),
-  tenantSlug: zod.string().optional(),
   guestToken: zod
     .string()
     .optional()

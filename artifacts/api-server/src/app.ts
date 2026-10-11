@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import { stripeWebhookHandler } from "./routes/payments";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -36,6 +37,8 @@ if (process.env.NODE_ENV !== "production") {
   app.use(cors());
 }
 app.use(cookieParser());
+// Stripe requires the untouched request bytes to verify the webhook signature.
+app.post("/api/payments/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }), stripeWebhookHandler);
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 

@@ -147,16 +147,6 @@ router.get("/markers/by-code/:code", async (req, res): Promise<void> => {
     return;
   }
 
-  const requestedTenant = typeof req.query.tenantSlug === "string" ? req.query.tenantSlug.toLowerCase() : null;
-  const [owner] = await db.select({ id: usersTable.id, slug: usersTable.slug })
-    .from(usersTable).where(eq(usersTable.id, marker.ownerUserId));
-  const defaultTenant = requestedTenant ? undefined : (await db.select({ id: usersTable.id })
-    .from(usersTable).where(eq(usersTable.role, "admin")).orderBy(usersTable.id).limit(1))[0];
-  if (!owner || (requestedTenant ? owner.slug !== requestedTenant : defaultTenant?.id !== owner.id)) {
-    res.status(404).json({ error: "Nie znaleziono znacznika na tej mapie." });
-    return;
-  }
-
   // expiresAt is null until first discovery; treat null as "not yet expired".
   if (marker.expiresAt && new Date() > new Date(marker.expiresAt)) {
     res.status(404).json({ error: "Marker expired" });

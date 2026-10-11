@@ -181,22 +181,6 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     return;
   }
 
-  if (parsed.data.tenantSlug) {
-    const [owner] = await db.select({ slug: usersTable.slug })
-      .from(usersTable).where(eq(usersTable.id, marker.ownerUserId));
-    if (!owner || owner.slug !== parsed.data.tenantSlug.toLowerCase()) {
-      res.status(404).json({ error: "Ten kod nie należy do tej mapy." });
-      return;
-    }
-  } else {
-    const [defaultTenant] = await db.select({ id: usersTable.id })
-      .from(usersTable).where(eq(usersTable.role, "admin")).orderBy(usersTable.id).limit(1);
-    if (!defaultTenant || marker.ownerUserId !== defaultTenant.id) {
-      res.status(404).json({ error: "Otwórz adres swojej mapy, aby wejść do tej gry." });
-      return;
-    }
-  }
-
   // Block reads of an already-expired code. Markers with expiresAt === null
   // have NOT been activated yet — those are still redeemable.
   if (marker.expiresAt && new Date() > new Date(marker.expiresAt)) {

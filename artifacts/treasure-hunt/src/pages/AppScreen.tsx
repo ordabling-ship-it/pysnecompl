@@ -50,11 +50,10 @@ const createIcon = (html: string) => L.divIcon({
 });
 
 const CREATOR_PIN_PACKAGES = [
-  { name: "Mały", amount: 50, price: 249 },
-  { name: "Średni", amount: 100, price: 449 },
-  { name: "Duży", amount: 250, price: 849 },
+  { id: "small", name: "Mały", amount: 50, price: 249 },
+  { id: "medium", name: "Średni", amount: 100, price: 449 },
+  { id: "large", name: "Duży", amount: 250, price: 849 },
 ] as const;
-const BUYCOFFEE_URL = "https://buycoffee.to/czosnek";
 
 // ─────────────────────────────────────────────
 // Image compression: resize to max 800×600, then
@@ -372,7 +371,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const { toast } = useToast();
   const [pinBalance, setPinBalance] = useState<number | null>(user?.pinBalance ?? null);
   const [pinPurchaseOpen, setPinPurchaseOpen] = useState(false);
-  const [managedUsers, setManagedUsers] = useState<Array<{ id: number; name: string; slug: string; role: string; pinBalance: number; totalPins: number; discoveries: number; redemptions: number }>>([]);
+  const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [paymentPending, setPaymentPending] = useState(false);
+  const [managedUsers, setManagedUsers] = useState<Array<{ id: number; name: string; role: string; pinBalance: number; totalPins: number; discoveries: number; redemptions: number }>>([]);
   const [managedActivity, setManagedActivity] = useState<Array<{ id: number; eventType: string; createdAt: string; actorName: string | null; details: Record<string, string | number | boolean | null> }>>([]);
   const [accountName, setAccountName] = useState("");
   const [accountPassword, setAccountPassword] = useState("");
@@ -384,6 +386,96 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const [passwordResetConfirm, setPasswordResetConfirm] = useState("");
   const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [passwordResetBusy, setPasswordResetBusy] = useState(false);
+  const handlePinCheckout = async (packageId: (typeof CREATOR_PIN_PACKAGES)[number]["id"]) => {
+    setCheckoutError(null);
+    setCheckoutBusy(packageId);
+    try {
+      const response = await fetch("/api/payments/checkout-session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ packageId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Nie udało się rozpocząć płatności.");
+      const checkoutUrl = new URL(result.url);
+      if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "checkout.stripe.com") {
+        throw new Error("Otrzymany adres płatności Stripe jest nieprawidłowy.");
+      }
+      window.location.assign(checkoutUrl.toString());
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Nie udało się rozpocząć płatności.");
+      setCheckoutBusy(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    const url = new URL(window.location.href);
+    const paymentResult = url.searchParams.get("payment");
+    const sessionId = url.searchParams.get("session_id");
+    const clearPaymentQuery = () => {
+      url.searchParams.delete("payment");
+      url.searchParams.delete("session_id");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    };
+
+    if (paymentResult === "cancelled") {
+      setPinPurchaseOpen(true);
+      setCheckoutError(null);
+      toast({ title: "Płatność anulowana", description: "Nie pobrano opłaty. Możesz wybrać pakiet ponownie." });
+      clearPaymentQuery();
+      return;
+    }
+    if (paymentResult !== "success" || !sessionId || user.role !== "admin") return;
+
+    let attempts = 0;
+    let timer: number | undefined;
+    let stopped = false;
+    const checkPayment = async () => {
+      try {
+        const response = await fetch(`/api/payments/checkout-session/${encodeURIComponent(sessionId)}`, {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.status === "paid") {
+            if (stopped) return;
+            setPinBalance(result.pinBalance);
+            setPaymentPending(false);
+            toast({ title: "Płatność potwierdzona", description: "Nowe pinezki zostały dodane do Twojego konta." });
+            clearPaymentQuery();
+            return;
+          }
+          if (result.status === "failed" || result.status === "expired") {
+            if (stopped) return;
+            setPaymentPending(false);
+            setPinPurchaseOpen(true);
+            setCheckoutError(result.status === "expired" ? "Sesja płatności wygasła. Wybierz pakiet ponownie." : "Płatność nie została zrealizowana. Możesz spróbować ponownie.");
+            clearPaymentQuery();
+            return;
+          }
+        }
+      } catch {
+        // The webhook may still be processing; retry briefly below.
+      }
+      attempts += 1;
+      if (stopped) return;
+      if (attempts >= 20) {
+        setPaymentPending(true);
+        setPinPurchaseOpen(true);
+        toast({ title: "Płatność jest potwierdzana", description: "Saldo zaktualizuje się po potwierdzeniu przez Stripe. Odśwież stronę za chwilę." });
+        return;
+      }
+      timer = window.setTimeout(checkPayment, 1500);
+    };
+    void checkPayment();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [user?.id]);
   const canManageAccounts = user?.role === "moderator" || user?.role === "master_admin";
   const loadManagedUsers = async () => {
     const response = await fetch("/api/control/users", { credentials: "same-origin", headers: { Accept: "application/json" } });
@@ -409,7 +501,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       await loadManagedUsers();
       toast({
         title: "Konto utworzone",
-        description: `Mapa: ${window.location.origin}/${result.slug} · ${result.role === "moderator" ? "brak limitu pinezek" : "saldo początkowe: 10 pinezek"}.`,
+        description: `Zaloguj się na stronie głównej. ${result.role === "moderator" ? "Moderator nie ma limitu pinezek." : "Kreator otrzymuje 10 darmowych pinezek."}`,
       });
     } catch (error) {
       setAccountError(error instanceof Error ? error.message : "Nie udało się utworzyć konta.");
@@ -1028,15 +1120,16 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 {isCreator && (
                   <section aria-label="Pakiety pinezek dla Kreatorów" className="rounded-xl border border-green-200 bg-green-50 p-3 text-green-950 dark:border-green-800 dark:bg-green-950/40 dark:text-green-100">
                     <h2 className="text-sm font-semibold">Pakiety pinezek dla Kreatorów</h2>
-                    <p className="mt-1 text-xs">Wybierz pakiet i przejdź do BuyCoffee.</p>
+                    <p className="mt-1 text-xs">Wybierz pakiet i zapłać bezpiecznie przez Stripe Checkout.</p>
                     <div className="mt-2 space-y-1">
                       {CREATOR_PIN_PACKAGES.map((pack) => (
-                        <a key={pack.name} href={BUYCOFFEE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-lg border border-green-200 bg-white px-2.5 py-2 text-xs hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:hover:bg-green-950/70">
-                          <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł ↗</strong>
-                        </a>
+                        <Button key={pack.id} type="button" variant="outline" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)} className="flex h-auto w-full items-center justify-between rounded-lg border-green-200 bg-white px-2.5 py-2 text-xs text-green-950 hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:text-green-100 dark:hover:bg-green-950/70">
+                          <span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.amount} pinezek</span><strong>{pack.price} zł</strong>
+                        </Button>
                       ))}
                     </div>
-                    <p className="mt-2 text-[11px] leading-4">W dedykacji na BuyCoffee wpisz login i nazwę pakietu. Po potwierdzeniu wpłaty pinezki dodamy ręcznie.</p>
+                    {checkoutError && <p role="alert" className="mt-2 text-xs text-red-700 dark:text-red-300">{checkoutError}</p>}
+                    <p className="mt-2 text-[11px] leading-4">Po potwierdzeniu płatności pinezki automatycznie pojawią się na Twoim koncie.</p>
                   </section>
                 )}
 
@@ -1045,7 +1138,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                     {hasUnlimitedPins ? (
                       <>Pinezki: <strong>bez limitu</strong></>
                     ) : (
-                      <>Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong><span className="block text-xs">Każdy nowy skarb zużywa 1 pinezkę. Po wykorzystaniu puli możesz wybrać pakiet BuyCoffee.</span></>
+                      <>Pozostałe pinezki: <strong>{pinBalance ?? "…"}</strong><span className="block text-xs">Każdy nowy skarb zużywa 1 pinezkę. Dodatkową pulę dokupisz przez Stripe Checkout.</span></>
                     )}
                   </div>
                 )}
@@ -1083,7 +1176,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                             <span>{managed.role === "master_admin" || managed.role === "moderator" ? "Bez limitu pinezek" : `${managed.pinBalance} pinezek`}</span>
                           </div>
                           <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>
-                          <a className="mt-1 inline-block text-green-800 underline dark:text-green-300" href={`/${managed.slug}`} target="_blank" rel="noreferrer">Otwórz mapę · /{managed.slug}</a>
+                          <p className="mt-1 text-green-800 dark:text-green-300">Osobna mapa konta · dostęp po zalogowaniu na stronie głównej</p>
                           {user?.role === "master_admin" && managed.role !== "master_admin" && (
                             passwordResetTargetId === managed.id ? (
                               <form onSubmit={(event) => handleResetManagedPassword(event, managed.id, managed.name)} className="mt-2 space-y-2 rounded-md border border-green-200 p-2 dark:border-green-900">
@@ -1547,15 +1640,16 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           <DialogHeader>
             <DialogTitle className="text-green-900 dark:text-green-200">Pakiety pinezek dla Kreatorów</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet i przejdź do BuyCoffee. W dedykacji wpisz login oraz nazwę pakietu; po potwierdzeniu wpłaty pinezki dodamy ręcznie.</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Wybierz pakiet i zapłać bezpiecznie przez Stripe Checkout. Pinezki zostaną automatycznie dodane po potwierdzeniu płatności.</p>
+          {paymentPending && <p role="status" className="rounded-md bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">Stripe potwierdza płatność. Saldo pinezek odświeży się po otrzymaniu potwierdzenia.</p>}
           <div className="space-y-2">
             {CREATOR_PIN_PACKAGES.map((pack) => (
-              <a key={pack.name} href={BUYCOFFEE_URL} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between rounded-lg border border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
-                <span><strong>{pack.name}</strong> · {pack.amount} pinezek</span><strong>{pack.price} zł · BuyCoffee ↗</strong>
-              </a>
+              <Button key={pack.id} type="button" variant="outline" disabled={checkoutBusy !== null} onClick={() => void handlePinCheckout(pack.id)} className="flex h-auto w-full items-center justify-between rounded-lg border-green-200 px-3 py-2 text-sm hover:bg-green-50 dark:border-green-900 dark:hover:bg-green-950/40">
+                <span className="flex items-center">{checkoutBusy === pack.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}<strong>{pack.name}</strong>&nbsp;· {pack.amount} pinezek</span><strong>{pack.price} zł</strong>
+              </Button>
             ))}
           </div>
-          <p className="text-xs text-amber-800 dark:text-amber-300">Płatność nie dodaje pinezek automatycznie. Saldo uzupełnimy po potwierdzeniu wpłaty.</p>
+          {checkoutError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{checkoutError}</p>}
         </DialogContent>
       </Dialog>
     </div>

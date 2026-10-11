@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -45,7 +45,6 @@ function getAutoTheme(): "light" | "dark" {
 }
 
 function MainApp() {
-  const tenantSlug = window.location.pathname.split("/").filter(Boolean)[0]?.toLowerCase();
   const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
   const [user, setUser] = useState<{ id: number; name: string; role: string; pinBalance?: number } | null>(
     layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", pinBalance: 10 } : null,
@@ -115,7 +114,7 @@ function MainApp() {
       try {
         const { code } = JSON.parse(saved) as { code: string };
         const guestToken = getOrCreateGuestToken();
-        const guest = await guestLogin({ code, guestToken, tenantSlug });
+        const guest = await guestLogin({ code, guestToken });
         if (mounted) setGuestData(guest);
       } catch {
         localStorage.removeItem(GUEST_SESSION_KEY);
@@ -197,7 +196,6 @@ function MainApp() {
       <AuthScreen
         onLoginAdmin={handleAdminLogin}
         onLoginGuest={handleGuestLogin}
-        tenantSlug={tenantSlug}
         theme={theme}
         onToggleTheme={handleToggleTheme}
       />
@@ -222,7 +220,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={MainApp} />
-      <Route path="/:tenantSlug" component={MainApp} />
+      <Route path="/:legacyPath">
+        <Redirect to="/" replace />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

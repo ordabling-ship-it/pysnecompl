@@ -14,9 +14,106 @@ tags:
     description: Treasure marker operations
   - name: auth
     description: Authentication operations
+  - name: payments
+    description: Creator pin package payments
   - name: redemptions
     description: Code redemption operations
 paths:
+  /payments/checkout-session:
+    post:
+      operationId: createPinCheckoutSession
+      tags: [payments]
+      summary: Create a Stripe Checkout session for a creator pin package
+      security:
+        - AdminSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                packageId:
+                  type: string
+                  enum: [small, medium, large]
+              required: [packageId]
+      responses:
+        "201":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    format: uri
+                required: [url]
+        "401":
+          description: Creator session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Stripe is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /payments/checkout-session/{sessionId}:
+    get:
+      operationId: getPinCheckoutStatus
+      tags: [payments]
+      summary: Get the status of the signed-in creator's Stripe Checkout session
+      security:
+        - AdminSession: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment and current pin balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [pending, paid, failed, expired]
+                  pinBalance:
+                    type: integer
+                required: [status, pinBalance]
+        "404":
+          description: Session not found for this creator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /payments/stripe/webhook:
+    post:
+      operationId: receiveStripeWebhook
+      tags: [payments]
+      summary: Receive signed Stripe payment events
+      description: Signature is verified against the raw request body using STRIPE_WEBHOOK_SECRET.
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event received
+        "400":
+          description: Invalid Stripe signature
+
   /healthz:
     get:
       operationId: healthCheck
@@ -271,6 +368,11 @@ paths:
                 $ref: "#/components/schemas/Stats"
 
 components:
+  securitySchemes:
+    AdminSession:
+      type: apiKey
+      in: cookie
+      name: pysne_admin_session
   schemas:
     HealthStatus:
       type: object
@@ -307,9 +409,6 @@ components:
         guestToken:
           type: string
           description: Optional, legacy browser identifier. Server no longer uses it for timer logic (the marker timer is shared across all guests once activated).
-        tenantSlug:
-          type: string
-          description: Owner map slug required for tenant-specific game pages.
       required:
         - code
 

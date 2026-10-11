@@ -20,7 +20,6 @@ export interface AdminLoginBody {
 
 export interface GuestLoginBody {
   code: string;
-  tenantSlug?: string;
   /** Optional, legacy browser identifier. Server no longer uses it for timer logic (the marker timer is shared across all guests once activated). */
   guestToken?: string;
 }
@@ -29,6 +28,8 @@ export interface AuthResponse {
   id: number;
   name: string;
   role: string;
+  slug?: string;
+  pinBalance?: number;
 }
 
 export interface GuestAuthResponse {
