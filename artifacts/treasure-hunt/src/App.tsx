@@ -131,8 +131,15 @@ function MainApp() {
 
   useEffect(() => {
     if (window.location.pathname !== "/analytics" || hydrating) return;
-    if (!user || (user.id !== 1 && user.id !== 2)) window.history.replaceState({}, "", "/");
-  }, [user, hydrating]);
+    // Keep the deep link while unauthenticated so the standard login can send
+    // authorized users straight into analytics. Guests and other admins return
+    // to the homepage after their session has been restored.
+    if (!user) {
+      if (guestData) window.history.replaceState({}, "", "/");
+      return;
+    }
+    if (user.id !== 1 && user.id !== 2) window.history.replaceState({}, "", "/");
+  }, [user, guestData, hydrating]);
 
   const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number }) => {
     setUser(data);
