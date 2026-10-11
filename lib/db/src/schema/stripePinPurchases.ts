@@ -9,6 +9,7 @@ export const stripePinPurchasesTable = pgTable("stripe_pin_purchases", {
   packageId: text("package_id").notNull(),
   pins: integer("pins").notNull(),
   amountCents: integer("amount_cents").notNull(),
+  refundAmountCents: integer("refund_amount_cents").notNull().default(0),
   currency: text("currency").notNull().default("pln"),
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

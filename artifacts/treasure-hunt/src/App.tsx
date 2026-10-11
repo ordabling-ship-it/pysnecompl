@@ -2,11 +2,13 @@ import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { guestLogin } from "@workspace/api-client-react";
 import NotFound from "@/pages/not-found";
 import AuthScreen from "@/pages/AuthScreen";
 import AppScreen from "@/pages/AppScreen";
+
+const AnalyticsScreen = lazy(() => import("@/pages/AnalyticsScreen"));
 
 const queryClient = new QueryClient();
 
@@ -127,6 +129,11 @@ function MainApp() {
     return () => { mounted = false; };
   }, [layoutPreview, termsAccepted]);
 
+  useEffect(() => {
+    if (window.location.pathname !== "/analytics" || hydrating) return;
+    if (!user || (user.id !== 1 && user.id !== 2)) window.history.replaceState({}, "", "/");
+  }, [user, hydrating]);
+
   const handleAdminLogin = (data: { id: number; name: string; role: string; pinBalance?: number }) => {
     setUser(data);
     setLoginMsg(`Witaj, ${data.name}!`);
@@ -191,6 +198,10 @@ function MainApp() {
     );
   }
 
+  if (window.location.pathname === "/analytics" && user && (user.id === 1 || user.id === 2)) {
+    return <Suspense fallback={<div className="min-h-screen bg-gray-50 p-8 text-center text-sm text-gray-600 dark:bg-gray-950 dark:text-gray-300">Ładowanie analityki…</div>}><AnalyticsScreen userId={user.id} userName={user.name} theme={theme} onToggleTheme={handleToggleTheme} /></Suspense>;
+  }
+
   if (!user && !guestData) {
     return (
       <AuthScreen
@@ -219,6 +230,7 @@ function MainApp() {
 function Router() {
   return (
     <Switch>
+      <Route path="/analytics" component={MainApp} />
       <Route path="/" component={MainApp} />
       <Route path="/:legacyPath">
         <Redirect to="/" replace />

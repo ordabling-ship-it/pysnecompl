@@ -57,6 +57,19 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query(
     "ALTER TABLE markers ADD COLUMN IF NOT EXISTS archived_at timestamptz",
   );
+  await pool.query("ALTER TABLE markers ADD COLUMN IF NOT EXISTS category text");
+  await pool.query("ALTER TABLE stripe_pin_purchases ADD COLUMN IF NOT EXISTS refund_amount_cents integer NOT NULL DEFAULT 0");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS markers_created_at_idx ON markers (created_at DESC)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS markers_owner_created_idx ON markers (owner_user_id, created_at DESC)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS markers_lat_lng_idx ON markers (lat, lng)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS markers_category_idx ON markers (category)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS users_created_at_idx ON users (created_at DESC)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_logs_actor_created_idx ON audit_logs (actor_user_id, created_at DESC)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_logs_tenant_created_idx ON audit_logs (tenant_user_id, created_at DESC)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_logs_event_created_idx ON audit_logs (event_type, created_at DESC)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS stripe_pin_purchases_created_status_idx ON stripe_pin_purchases (created_at DESC, status)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS stripe_pin_purchases_payment_intent_idx ON stripe_pin_purchases (stripe_payment_intent_id)");
+  await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS stripe_pin_purchases_creator_paid_idx ON stripe_pin_purchases (creator_user_id, paid_at DESC)");
 
   const admins = await db
     .select({ id: usersTable.id, passwordHash: usersTable.passwordHash })

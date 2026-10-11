@@ -228,6 +228,7 @@ type MarkerItem = {
   id: number;
   title: string;
   description: string;
+  category?: string | null;
   code: string;
   lat: number;
   lng: number;
@@ -551,6 +552,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   // Form state
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [newCategory, setNewCategory] = useState("");
   const [newImg, setNewImg] = useState<string | null>(null);
   const [imgProcessing, setImgProcessing] = useState(false);
   // Briefly flashes a green check next to the image upload button after success.
@@ -606,9 +608,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const previewMarkers = useMemo<Marker[]>(() => {
     const now = Date.now();
     return [
-      { id: -1, title: "Złote jajko przy Wałach", description: "Szukaj przy dużym drzewie.", code: "ZL0TE", lat: 53.4288, lng: 14.5526, imageUrl: null, createdAt: new Date(now - 3_600_000).toISOString(), expiresAt: new Date(now + 2_870_000).toISOString(), activatedAt: new Date(now - 730_000).toISOString(), redemptionCount: 1 },
-      { id: -2, title: "Tajemnicza skrzynka", description: "Rozejrzyj się w pobliżu fontanny.", code: "SK4RB", lat: 53.4323, lng: 14.5591, imageUrl: null, createdAt: new Date(now - 7_200_000).toISOString(), expiresAt: null, activatedAt: null, redemptionCount: 0 },
-      { id: -3, title: "Moneta podróżnika", description: "Podążaj za wskazówką.", code: "M0NET", lat: 53.4247, lng: 14.5452, imageUrl: null, createdAt: new Date(now - 86_400_000).toISOString(), expiresAt: new Date(now - 3_600_000).toISOString(), activatedAt: new Date(now - 4_200_000).toISOString(), redemptionCount: 1 },
+      { id: -1, title: "Złote jajko przy Wałach", description: "Szukaj przy dużym drzewie.", category: "Widok", code: "ZL0TE", lat: 53.4288, lng: 14.5526, imageUrl: null, createdAt: new Date(now - 3_600_000).toISOString(), expiresAt: new Date(now + 2_870_000).toISOString(), activatedAt: new Date(now - 730_000).toISOString(), redemptionCount: 1 },
+      { id: -2, title: "Tajemnicza skrzynka", description: "Rozejrzyj się w pobliżu fontanny.", category: "Zagadka", code: "SK4RB", lat: 53.4323, lng: 14.5591, imageUrl: null, createdAt: new Date(now - 7_200_000).toISOString(), expiresAt: null, activatedAt: null, redemptionCount: 0 },
+      { id: -3, title: "Moneta podróżnika", description: "Podążaj za wskazówką.", category: null, code: "M0NET", lat: 53.4247, lng: 14.5452, imageUrl: null, createdAt: new Date(now - 86_400_000).toISOString(), expiresAt: new Date(now - 3_600_000).toISOString(), activatedAt: new Date(now - 4_200_000).toISOString(), redemptionCount: 1 },
     ];
   }, []);
   const { data: liveMarkers = [] } = useListMarkers({
@@ -811,7 +813,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     if (layoutPreview) return;
     if (!clickPos || !newTitle || !newDesc) return;
     createMarker.mutate(
-      { data: { title: newTitle, description: newDesc, lat: clickPos.lat, lng: clickPos.lng, imageUrl: newImg } },
+      { data: { title: newTitle, description: newDesc, category: newCategory.trim() || null, lat: clickPos.lat, lng: clickPos.lng, imageUrl: newImg } },
       {
         onSuccess: async (created) => {
           queryClient.invalidateQueries({ queryKey: getListMarkersQueryKey() });
@@ -826,6 +828,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           setIsSheetOpen(false);
           setNewTitle("");
           setNewDesc("");
+          setNewCategory("");
           setNewImg(null);
         },
         onError: (error) => {
@@ -1094,6 +1097,11 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                   </span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  {(user?.id === 1 || user?.id === 2) && !layoutPreview && (
+                    <a href="/analytics" className="rounded-md border border-green-200 px-2 py-1 text-xs font-semibold text-green-800 hover:bg-green-50 dark:border-green-800 dark:text-green-200 dark:hover:bg-green-950" aria-label="Otwórz analitykę serwisu">
+                      Analityka
+                    </a>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1523,6 +1531,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 placeholder="Idź wzdłuż rzeki aż zobaczysz..."
                 className="resize-none"
               />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="marker-category">Kategoria (opcjonalnie)</label>
+              <Input id="marker-category" value={newCategory} maxLength={50} onChange={(e) => setNewCategory(e.target.value)} placeholder="np. zagadka, widok, zadanie" />
             </div>
 
             {/* ── Image upload section with preview + remove/replace ── */}

@@ -37,6 +37,7 @@ function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, cou
     id: marker.id,
     title: marker.title,
     description: marker.description,
+    category: marker.category ?? null,
     code: marker.code,
     lat: marker.lat,
     lng: marker.lng,
@@ -81,6 +82,7 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
   }
 
   const { title, description, lat, lng, imageUrl } = parsed.data;
+  const category = parsed.data.category?.trim().slice(0, 50) || null;
   const admin = res.locals.adminUser as AdminUser;
   const hasUnlimitedPins = admin.role === "master_admin" || admin.role === "moderator";
 
@@ -106,7 +108,7 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const [created] = await tx.insert(markersTable)
-        .values({ ownerUserId: admin.id, title, description, lat, lng, imageUrl: imageUrl ?? null, code: genCode(), expiresAt: null })
+        .values({ ownerUserId: admin.id, title, description, category, lat, lng, imageUrl: imageUrl ?? null, code: genCode(), expiresAt: null })
         .onConflictDoNothing({ target: markersTable.code })
         .returning();
       if (created) return created;
@@ -122,8 +124,8 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
 
-  req.log.info({ markerId: marker.id, code: marker.code, ownerUserId: admin.id }, "Marker created");
-  await recordAudit("marker_created", admin.id, admin.id, { markerId: marker.id, code: marker.code, title: marker.title });
+  req.log.info({ markerId: marker.id, ownerUserId: admin.id }, "Marker created");
+  await recordAudit("marker_created", admin.id, admin.id, { markerId: marker.id, title: marker.title, category });
   res.status(201).json(markerWithRedemptionCount(marker, 0));
 });
 

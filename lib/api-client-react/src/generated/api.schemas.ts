@@ -49,6 +49,8 @@ export interface Marker {
   id: number;
   title: string;
   description: string;
+  /** @nullable */
+  category: string | null;
   code: string;
   lat: number;
   lng: number;
@@ -71,6 +73,8 @@ export interface Marker {
 export interface CreateMarkerBody {
   title: string;
   description: string;
+  /** @nullable */
+  category?: string | null;
   lat: number;
   lng: number;
   /** @nullable */

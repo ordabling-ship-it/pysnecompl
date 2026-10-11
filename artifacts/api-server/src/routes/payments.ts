@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { and, eq, sql } from "drizzle-orm";
-import { db, stripePinPurchasesTable, usersTable } from "@workspace/db";
+import { auditLogsTable, db, stripePinPurchasesTable, usersTable } from "@workspace/db";
 import { getAuthenticatedAdmin, requireRole, type AdminUser } from "../lib/admin-session";
 import { recordAudit } from "../lib/audit";
 
@@ -55,6 +55,7 @@ router.post("/payments/checkout-session", requireRole("admin"), async (req, res)
       mode: "payment",
       client_reference_id: String(user.id),
       metadata: { creator_user_id: String(user.id), package_id: packageId },
+      payment_intent_data: { metadata: { creator_user_id: String(user.id), package_id: packageId } },
       line_items: [{
         quantity: 1,
         price_data: {
@@ -78,6 +79,13 @@ router.post("/payments/checkout-session", requireRole("admin"), async (req, res)
     await db.insert(stripePinPurchasesTable).values({
       creatorUserId: user.id,
       stripeSessionId: session.id,
+      packageId,
+      pins: selectedPackage.pins,
+      amountCents: selectedPackage.amountCents,
+      currency: "pln",
+      status: "pending",
+    });
+    await recordAudit("pin_pack_payment_started", user.id, user.id, {
       packageId,
       pins: selectedPackage.pins,
       amountCents: selectedPackage.amountCents,
@@ -139,6 +147,55 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
     return;
   }
 
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as Stripe.Charge;
+    const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+    if (paymentIntentId) {
+      // Checkout's completion and refund webhooks can arrive in either order.
+      // Resolve the Checkout session if its completion event has not stored the
+      // PaymentIntent ID on the purchase yet.
+      const [knownPurchase] = await db.select({ id: stripePinPurchasesTable.id })
+        .from(stripePinPurchasesTable)
+        .where(eq(stripePinPurchasesTable.stripePaymentIntentId, paymentIntentId))
+        .limit(1);
+      let fallbackSessionId: string | null = null;
+      if (!knownPurchase) {
+        const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
+        fallbackSessionId = sessions.data[0]?.id ?? null;
+      }
+      const purchase = await db.transaction(async (tx) => {
+        let [current] = await tx.select().from(stripePinPurchasesTable)
+          .where(eq(stripePinPurchasesTable.stripePaymentIntentId, paymentIntentId)).limit(1).for("update");
+        if (!current && fallbackSessionId) {
+          [current] = await tx.select().from(stripePinPurchasesTable)
+            .where(eq(stripePinPurchasesTable.stripeSessionId, fallbackSessionId)).limit(1).for("update");
+        }
+        if (!current || current.currency !== charge.currency || charge.amount_refunded <= current.refundAmountCents) return null;
+        const deltaCents = charge.amount_refunded - current.refundAmountCents;
+        await tx.update(stripePinPurchasesTable)
+          .set({ refundAmountCents: charge.amount_refunded, stripePaymentIntentId: paymentIntentId })
+          .where(eq(stripePinPurchasesTable.id, current.id));
+        await tx.insert(auditLogsTable).values({
+          eventType: "pin_pack_refunded",
+          actorUserId: null,
+          tenantUserId: current.creatorUserId,
+          details: {
+            refundedAmountCents: charge.amount_refunded,
+            refundDeltaCents: deltaCents,
+            purchaseAmountCents: current.amountCents,
+            currency: current.currency,
+            fullyRefunded: charge.amount_refunded >= current.amountCents,
+            status: charge.amount_refunded >= current.amountCents ? "refunded" : "partially_refunded",
+          },
+        });
+        return true;
+      });
+      if (!purchase && fallbackSessionId) req.log.warn({ sessionId: fallbackSessionId }, "Stripe refund did not match a stored pin purchase");
+    }
+    res.json({ received: true });
+    return;
+  }
+
   if (event.type === "checkout.session.async_payment_failed" || event.type === "checkout.session.expired") {
     const session = event.data.object as Stripe.Checkout.Session;
     const status = event.type === "checkout.session.expired" ? "expired" : "failed";
@@ -194,6 +251,7 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
         pins: credited.pins,
         amountCents: purchase.amountCents,
         currency: purchase.currency,
+        status: "paid",
       });
       req.log.info({ creatorUserId: credited.creatorUserId, pins: credited.pins }, "Stripe payment credited");
     }

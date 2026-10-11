@@ -7,6 +7,7 @@ import statsRouter from "./stats";
 import discoveriesRouter from "./discoveries";
 import controlRouter from "./control";
 import paymentsRouter from "./payments";
+import analyticsRouter from "./analytics";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(statsRouter);
 router.use(discoveriesRouter);
 router.use(controlRouter);
 router.use(paymentsRouter);
+router.use(analyticsRouter);
 
 export default router;

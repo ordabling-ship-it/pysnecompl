@@ -205,7 +205,7 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
     if (activated?.expiresAt) {
       activeExpiresAt = activated.expiresAt;
       req.log.info({ markerId: marker.id, expiresAt: activeExpiresAt }, "Code timer activated by first guest");
-      await recordAudit("treasure_activated", null, marker.ownerUserId, { markerId: marker.id, code: marker.code });
+      await recordAudit("treasure_activated", null, marker.ownerUserId, { markerId: marker.id });
     } else {
       const [fresh] = await db.select().from(markersTable).where(eq(markersTable.id, marker.id));
       if (!fresh?.expiresAt) {
@@ -218,6 +218,7 @@ router.post("/auth/guest-login", async (req, res): Promise<void> => {
   }
 
   req.log.info({ markerId: marker.id }, "Guest logged in with code");
+  await recordAudit("guest_code_entered", null, marker.ownerUserId, { markerId: marker.id });
   res.json({
     markerId: marker.id,
     code: marker.code,
