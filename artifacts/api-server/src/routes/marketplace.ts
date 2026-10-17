@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { pool } from "@workspace/db";
 import { requireRole, type AdminUser } from "../lib/admin-session";
 import { canCancelReservation, canConfirmPickup, canRespondToReservation, generatePickupCode, hashPickupCode, matchesPickupCode, normalizeCoordinates, toPriceCents } from "../lib/marketplace-core.mjs";
@@ -240,7 +240,7 @@ router.post("/marketplace/offers", requireRole("admin"), async (req, res): Promi
       if (quantity < held) return { error: `Nie można ustawić mniej niż ${held} szt. — tyle jest już zarezerwowanych.` };
       const updated = await client.query(
         `UPDATE marketplace_offers SET price_cents = $2, quantity_total = $3,
-           quantity_available = $3 - $4, pickup_details = $5, pickup_until = $6,
+           quantity_available = $3::integer - $4::integer, pickup_details = $5, pickup_until = $6,
            status = 'active', updated_at = now()
          WHERE marker_id = $1 RETURNING id`,
         [markerId, priceCents, quantity, held, pickupDetails, pickupUntil],
@@ -332,7 +332,7 @@ router.post("/marketplace/reservations", async (req, res): Promise<void> => {
     if (!offer) return { error: "Oferta jest niedostępna lub wyczerpana.", status: 409 };
     const inserted = await client.query(
       `INSERT INTO marketplace_reservations (offer_id, creator_user_id, guest_session_hash, price_cents, currency, pickup_code_hash, response_deadline)
-       VALUES ($1, $2, $3, $4, $5, $6, now() + ($7 * interval '1 hour'))
+       VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::integer * interval '1 hour'))
        RETURNING id, status, price_cents AS "priceCents", response_deadline AS "responseDeadline"`,
       [offer.id, offer.creator_user_id, guestHash, offer.price_cents, offer.currency, pickupCodeHash, RESPONSE_WINDOW_HOURS],
     );
@@ -413,7 +413,7 @@ router.post("/marketplace/reservations/:reservationId/respond", requireRole("adm
     const nextStatus = action === "accept" ? "accepted" : "rejected";
     const changed = await client.query(
       `UPDATE marketplace_reservations SET status = $2, accepted_at = CASE WHEN $2 = 'accepted' THEN now() ELSE accepted_at END,
-         pickup_expires_at = CASE WHEN $2 = 'accepted' THEN now() + ($3 * interval '1 day') ELSE NULL END,
+         pickup_expires_at = CASE WHEN $2 = 'accepted' THEN now() + ($3::integer * interval '1 day') ELSE NULL END,
          pickup_code_hash = CASE WHEN $2 = 'rejected' THEN '' ELSE pickup_code_hash END, updated_at = now()
        WHERE id = $1 AND status = 'requested' AND response_deadline > now() RETURNING id`,
       [reservationId, nextStatus, PICKUP_WINDOW_DAYS],
