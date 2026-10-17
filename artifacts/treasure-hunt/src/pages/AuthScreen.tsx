@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Key, User, ArrowLeft, Coins, AlertCircle, Sun, Moon } from "lucide-react";
+import { Loader2, Key, User, ArrowLeft, Coins, AlertCircle, Sun, Moon, MapPin } from "lucide-react";
 import { getOrCreateGuestToken, type GuestData } from "@/App";
+import MarketplaceScreen from "@/pages/MarketplaceScreen";
 
 type AuthScreenProps = {
   onLoginAdmin: (user: { id: number; name: string; role: string; slug?: string; pinBalance?: number; canAccessAnalytics?: boolean }) => void;
@@ -18,7 +19,7 @@ type AuthScreenProps = {
 };
 
 export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggleTheme, mode = "player", activationToken = "" }: AuthScreenProps) {
-  const [view, setView] = useState<"guest" | "admin">(mode === "panel" ? "admin" : "guest");
+  const [view, setView] = useState<"guest" | "admin" | "marketplace">(mode === "panel" ? "admin" : "guest");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -32,6 +33,10 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
   const guestLogin = useGuestLogin();
   const adminLogin = useAdminLogin();
 
+  if (view === "marketplace" && mode === "player") {
+    return <MarketplaceScreen embedded onBackHome={() => setView("guest")} />;
+  }
+
   const handleGuestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!code) return;
@@ -41,10 +46,10 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
       {
         onSuccess: (data) => {
           onLoginGuest(data);
-          toast({ title: "Skarb odkryty!", description: `Znalazłeś: ${data.markerTitle}` });
+          toast({ title: "Skarb odkryty!", description: `Otworzono: ${data.markerTitle}` });
         },
         onError: () => {
-          toast({ variant: "destructive", title: "Błąd", description: "Nieprawidłowy kod skarbu." });
+          toast({ variant: "destructive", title: "Nie udało się otworzyć skarbu", description: "Token jest nieprawidłowy lub wygasł. Sprawdź go i spróbuj ponownie." });
         },
       }
     );
@@ -106,7 +111,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
             </CardContent>
             <CardFooter className="flex-col gap-3">
               <Button type="submit" className="w-full bg-green-700 hover:bg-green-800" disabled={activationBusy || !activationToken}>{activationBusy ? "Aktywowanie…" : "Ustaw hasło i otwórz panel"}</Button>
-              {!activationToken && <p className="text-sm text-red-700">Brak klucza zaproszenia w linku. Poproś opiekuna konta o nowy link.</p>}
+              {!activationToken && <p className="text-sm text-red-700">W linku brakuje klucza zaproszenia. Poproś osobę, która utworzyła konto, o nowy link.</p>}
             </CardFooter>
           </form>
         </Card>
@@ -140,7 +145,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                 />
               </div>
               <CardTitle className="text-3xl font-bold text-green-950 dark:text-green-300">Pysne.com.pl</CardTitle>
-              <CardDescription className="text-green-800 dark:text-green-400 text-lg">Wpisz kod, aby odkryć skarb</CardDescription>
+              <CardDescription className="text-green-800 dark:text-green-400 text-lg">Wpisz token, aby otworzyć skarb</CardDescription>
             </CardHeader>
             <form onSubmit={handleGuestSubmit}>
               <CardContent>
@@ -148,7 +153,8 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                   <div className="space-y-2">
                     <Input
                       id="code"
-                      placeholder="KOD SKARBU"
+                      placeholder="WPISZ TOKEN"
+                      aria-label="Token do skarbu"
                       className="text-center text-2xl uppercase tracking-widest h-14 border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-amber-500"
                       value={code}
                       onChange={(e) => setCode(e.target.value)}
@@ -156,7 +162,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                       disabled={guestLogin.isPending}
                     />
                     <p className="px-1 text-center text-xs leading-relaxed text-green-800/80 dark:text-green-300/80">
-                      Wpisz kod znaleziony przy skarbie, aby odkryć wskazówkę i rozpocząć zabawę.
+                      Odbiorca nie potrzebuje konta ani logowania. Wpisz token otrzymany od organizatora, aby zobaczyć przypisaną treść.
                     </p>
                   </div>
                 </div>
@@ -170,7 +176,8 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                   {guestLogin.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Key className="w-5 h-5 mr-2" />}
                   Odkryj skarb
                 </Button>
-                <a href="/panel" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">Panel Kreatora i opiekuna</a>
+                <a href="/panel" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">Logowanie do panelu</a>
+                <Button type="button" variant="outline" className="w-full" onClick={() => setView("marketplace")}><MapPin className="mr-2 h-4 w-4" />Przeglądaj lokalne oferty</Button>
               </CardFooter>
             </form>
           </>

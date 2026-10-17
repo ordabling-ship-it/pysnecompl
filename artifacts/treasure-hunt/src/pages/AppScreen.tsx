@@ -152,6 +152,42 @@ function formatShortDate(iso: string): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${pad(d.getFullYear() % 100)}`;
 }
 
+const auditEventLabels: Record<string, string> = {
+  account_created: "Utworzono konto",
+  account_activated: "Aktywowano konto",
+  account_invite_issued: "Wysłano zaproszenie do konta",
+  account_password_reset: "Zmieniono hasło do konta",
+  marker_created: "Dodano skarb",
+  marker_archived: "Zarchiwizowano skarb",
+  treasure_activated: "Odbiorca rozpoczął grę",
+  guest_code_entered: "Odbiorca wpisał token",
+  code_redeemed: "Użyto tokenu",
+  admin_login: "Logowanie do panelu",
+  master_bootstrapped: "Utworzono konto Master Admina",
+  moderator_created: "Utworzono konto Moderatora",
+  pin_pack_payment_started: "Rozpoczęto płatność za pakiet pinezek",
+  pin_pack_payment_failed: "Płatność za pakiet pinezek nie powiodła się",
+  pin_pack_payment_expired: "Sesja płatności wygasła",
+  pin_pack_purchased: "Kupiono pakiet pinezek",
+  pin_pack_refunded: "Zwrócono płatność za pakiet pinezek",
+};
+
+function auditEventLabel(eventType: string): string {
+  return auditEventLabels[eventType] ?? eventType.replaceAll("_", " ");
+}
+
+function auditActorLabel(event: { eventType: string; actorName: string | null }): string {
+  if (event.actorName) return event.actorName;
+  return event.eventType === "treasure_activated" || event.eventType === "guest_code_entered" ? "Odbiorca" : "System";
+}
+
+function accountRoleLabel(role: string): string {
+  if (role === "admin") return "Kreator";
+  if (role === "moderator") return "Moderator";
+  if (role === "master_admin") return "Master Admin";
+  return "Inna rola";
+}
+
 // ─────────────────────────────────────────────
 // Guest Leaflet popup HTML (static — the single
 // countdown lives in the bottom-center chip).
@@ -196,7 +232,7 @@ function buildGuestPopupHtml(g: GuestData, isDark = false): string {
       ${imageBlock}
       <h3 style="font-weight:700;font-size:15px;color:${titleClr}">${escapePopupHtml(g.markerTitle)}</h3>
       <p style="font-size:12px;color:${textClr};margin-top:4px;font-style:italic">💡 ${escapePopupHtml(g.markerDescription)}</p>
-      <span style="display:inline-block;margin-top:8px;padding:2px 8px;background:${badgeBg};color:${badgeClr};border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase">Moneta znaleziona!</span>
+      <span style="display:inline-block;margin-top:8px;padding:2px 8px;background:${badgeBg};color:${badgeClr};border-radius:9999px;font-size:11px;font-weight:700;text-transform:uppercase">Skarb odkryty!</span>
       <button onclick="window.__thNavigate(${g.lat}, ${g.lng})"
         style="margin-top:10px;width:100%;background:#2563eb;color:#fff;font-size:13px;font-weight:600;padding:7px 10px;border:none;border-radius:6px;cursor:pointer">
         🧭 Nawiguj
@@ -336,7 +372,7 @@ function MarkerRow({
           variant="ghost"
           size="icon"
           className="w-6 h-6 text-gray-400 hover:text-green-700 hover:bg-green-50"
-          title="Kopiuj kod"
+          title="Kopiuj token"
           onClick={(e) => { e.stopPropagation(); onCopy(m.code); }}
         >
           <Copy className="w-3.5 h-3.5" />
@@ -692,7 +728,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
   const handleCopyCode = useCallback(async (code: string) => {
     const ok = await copyToClipboard(code);
     toast({
-      title: ok ? "Kod skopiowany" : "Nie udało się skopiować",
+      title: ok ? "Token skopiowany" : "Nie udało się skopiować tokenu",
       description: ok ? `${code} jest w schowku` : "Spróbuj skopiować ręcznie.",
       variant: ok ? "default" : "destructive",
     });
@@ -833,7 +869,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
           const ok = await copyToClipboard(created.code);
           toast({
             title: "Skarb dodany!",
-            description: ok ? `Kod ${created.code} skopiowany do schowka` : `Kod: ${created.code}`,
+            description: ok ? `Token ${created.code} skopiowany do schowka` : `Token: ${created.code}`,
           });
           setIsSheetOpen(false);
           setNewTitle("");
@@ -990,14 +1026,17 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         <div id="map" ref={mapContainer} className="absolute inset-0 w-full h-full" />
 
         {isAdmin && (
-          <Button
-            type="button"
-            onClick={startLocationSelection}
-            className="absolute top-3 left-14 z-[1200] h-10 rounded-xl bg-green-700 px-3.5 text-sm font-semibold text-white shadow-lg hover:bg-green-800"
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            Dodaj skarb
-          </Button>
+          <div className="absolute top-3 left-14 z-[1200] flex items-center gap-2">
+            <Button
+              type="button"
+              onClick={startLocationSelection}
+              className="h-10 rounded-xl bg-green-700 px-3.5 text-sm font-semibold text-white shadow-lg hover:bg-green-800"
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              Dodaj skarb
+            </Button>
+            {user?.role === "admin" && <a href="/marketplace/manage" className="inline-flex h-10 items-center rounded-xl border border-white/70 bg-white/95 px-3 text-sm font-semibold text-green-900 shadow-lg hover:bg-green-50 dark:border-gray-700 dark:bg-gray-900 dark:text-green-200 dark:hover:bg-gray-800">Moje oferty</a>}
+          </div>
         )}
 
         {isPickingLocation && (
@@ -1164,7 +1203,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                 {canManageAccounts && !layoutPreview && (
                   <details className="rounded-xl border border-green-200 bg-white p-3 dark:border-green-900 dark:bg-gray-800">
                     <summary className="cursor-pointer font-semibold text-green-950 dark:text-green-100">
-                      {user?.role === "master_admin" ? "Panel główny · konta i statystyki" : "Konta kreatorów"}
+                      {user?.role === "master_admin" ? "Panel główny · konta i statystyki" : "Konta Kreatorów"}
                     </summary>
                     <form onSubmit={handleCreateManagedAccount} className="mt-3 space-y-2">
                       <label className="block text-xs font-medium">Login
@@ -1197,9 +1236,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                           <div><strong>{globalOverview.accounts}</strong><span className="block text-gray-600 dark:text-gray-300">Konta w serwisie</span></div>
                           <div><strong>{globalOverview.admins}</strong><span className="block text-gray-600 dark:text-gray-300">Kreatorzy</span></div>
                           <div><strong>{globalOverview.markers}</strong><span className="block text-gray-600 dark:text-gray-300">Utworzone skarby</span></div>
-                          <div><strong>{globalOverview.activatedMarkers}</strong><span className="block text-gray-600 dark:text-gray-300">Aktywacje gry</span></div>
+                          <div><strong>{globalOverview.activatedMarkers}</strong><span className="block text-gray-600 dark:text-gray-300">Rozpoczęte gry</span></div>
                           <div><strong>{globalOverview.activeMarkers}</strong><span className="block text-gray-600 dark:text-gray-300">Aktywne skarby</span></div>
-                          <div><strong>{globalOverview.totalRedemptions}</strong><span className="block text-gray-600 dark:text-gray-300">Odblokowania kodów</span></div>
+                      <div><strong>{globalOverview.totalRedemptions}</strong><span className="block text-gray-600 dark:text-gray-300">Użycia tokenów</span></div>
                         </div>
                         <div className="mt-3 border-t border-green-200 pt-2 dark:border-green-900">
                           <strong>Statystyki wszystkich Kreatorów</strong>
@@ -1207,7 +1246,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                             {globalOverview.creatorUsage.map((creator) => (
                               <div key={creator.id} className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5 dark:bg-gray-900">
                                 <span className="min-w-0 truncate font-semibold text-green-800 dark:text-green-300">{creator.name}</span>
-                                <span className="shrink-0 text-right text-[10px] text-gray-600 dark:text-gray-300">{creator.markers} skarbów · {creator.activations} aktywacji · {creator.redemptions} odblokowań</span>
+                                <span className="shrink-0 text-right text-[10px] text-gray-600 dark:text-gray-300">{creator.markers} skarbów · {creator.activations} rozpoczętych gier · {creator.redemptions} użyć tokenów</span>
                               </div>
                             ))}
                             {globalOverview.creatorUsage.length === 0 && <p className="text-gray-600 dark:text-gray-300">Nie ma jeszcze kont Kreatorów.</p>}
@@ -1219,10 +1258,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       {managedUsers.map((managed) => (
                         <div key={managed.id} className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-900">
                           <div className="flex items-center justify-between gap-2 font-semibold">
-                            <span>{managed.name} <span className="font-normal text-gray-500">· {managed.role === "admin" ? "Kreator" : managed.role === "moderator" ? "Moderator" : managed.role}</span></span>
+                            <span>{managed.name} <span className="font-normal text-gray-500">· {accountRoleLabel(managed.role)}</span></span>
                             <span>{managed.role === "master_admin" || managed.role === "moderator" ? "Bez limitu pinezek" : `${managed.pinBalance} pinezek`}</span>
                           </div>
-                          <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} aktywacji · {managed.redemptions} odblokowań</div>
+                          <div className="mt-1 text-gray-600 dark:text-gray-300">{managed.totalPins} skarbów · {managed.discoveries} rozpoczętych gier · {managed.redemptions} użyć tokenów</div>
                           {managed.role === "admin" && (
                             <>
                               <Button type="button" variant="outline" size="sm" className="mt-2 h-8 w-full" disabled={inviteBusyId === managed.id} onClick={() => void handleReissueInvite(managed.id, managed.name)}>
@@ -1257,8 +1296,8 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                       <div className="max-h-56 space-y-2 overflow-y-auto">
                         {managedActivity.map((event) => (
                           <div key={event.id} className="rounded-md bg-gray-50 px-2.5 py-2 text-[11px] dark:bg-gray-900">
-                            <div className="font-semibold">{{ account_created: "Utworzono konto", account_password_reset: "Zmieniono hasło konta", marker_created: "Dodano skarb", treasure_activated: "Gość rozpoczął grę", code_redeemed: "Odblokowano kod", admin_login: "Logowanie administratora", master_bootstrapped: "Utworzono master admina" }[event.eventType] ?? event.eventType}</div>
-                            <div className="text-gray-600 dark:text-gray-300">{event.actorName ?? "Gość"}{event.details.username ? ` · ${event.details.username}` : ""} · {new Date(event.createdAt).toLocaleString("pl-PL")}</div>
+                            <div className="font-semibold">{auditEventLabel(event.eventType)}</div>
+                            <div className="text-gray-600 dark:text-gray-300">{auditActorLabel(event)}{event.details.username ? ` · ${event.details.username}` : ""} · {new Date(event.createdAt).toLocaleString("pl-PL")}</div>
                           </div>
                         ))}
                       </div>
@@ -1382,11 +1421,11 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                           {/* Recent activations log — code + time + street name */}
                           <div>
                             <div className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
-                              Ostatnie aktywacje ({discoveries.recent.length})
+                              Ostatnie odkrycia ({discoveries.recent.length})
                             </div>
                             {discoveries.recent.length === 0 ? (
                               <div className="text-[11px] italic text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
-                                Brak aktywacji od ostatniego resetu.
+                                Nie rozpoczęto jeszcze żadnej gry od ostatniego wyczyszczenia historii.
                               </div>
                             ) : (
                               <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900 rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed space-y-1 text-yellow-900 dark:text-yellow-200">
@@ -1452,7 +1491,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
                           value={markerSearch}
                           onChange={(e) => setMarkerSearch(e.target.value)}
                           placeholder="Szukaj skarbów"
-                          aria-label="Szukaj skarbów po nazwie lub kodzie"
+                          aria-label="Szukaj skarbów po nazwie lub tokenie"
                           className="h-10 rounded-lg bg-gray-50 pl-9 text-sm dark:bg-gray-700"
                         />
                         {markerSearch && (
@@ -1540,9 +1579,9 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto sm:max-w-md sm:mx-auto rounded-t-xl">
           <SheetHeader>
-            <SheetTitle>Ukryj nowy skarb</SheetTitle>
+                        <SheetTitle>Dodaj nowy skarb</SheetTitle>
             <SheetDescription>
-              Wprowadź dane skarbu. Kod zostanie wygenerowany automatycznie i skopiowany do schowka.
+              Wprowadź dane skarbu. Token zostanie wygenerowany automatycznie i skopiowany do schowka.
             </SheetDescription>
           </SheetHeader>
           <form onSubmit={handleCreateMarker} className="mt-4 space-y-4">

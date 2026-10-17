@@ -101,7 +101,7 @@ function whereParts(filters: Filters, column: string, params: unknown[], options
   return conditions;
 }
 
-router.use(async (req, res, next) => {
+router.use("/analytics", async (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   const user = await getAuthenticatedAdmin(req);
   const accessStatus = analyticsAccessStatus(user);

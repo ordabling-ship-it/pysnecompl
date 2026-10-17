@@ -1,4 +1,4 @@
-# Pysne.com.pl – Szczecin
+# Pysne.com.pl
 
 ## Overview
 

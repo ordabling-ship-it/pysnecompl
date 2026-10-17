@@ -7,6 +7,8 @@ import { guestLogin } from "@workspace/api-client-react";
 import NotFound from "@/pages/not-found";
 import AuthScreen from "@/pages/AuthScreen";
 import AppScreen from "@/pages/AppScreen";
+import MarketplaceScreen from "@/pages/MarketplaceScreen";
+import MarketplaceManageScreen from "@/pages/MarketplaceManageScreen";
 
 const AnalyticsScreen = lazy(() => import("@/pages/AnalyticsScreen"));
 
@@ -48,7 +50,7 @@ function getAutoTheme(): "light" | "dark" {
 
 function MainApp() {
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
-  const routeMode = pathname === "/panel" ? "panel" : pathname === "/activate" ? "activate" : pathname === "/analytics" ? "analytics" : "player";
+  const routeMode = pathname === "/panel" ? "panel" : pathname === "/activate" ? "activate" : pathname === "/analytics" ? "analytics" : pathname === "/oferty" ? "marketplace" : pathname === "/marketplace/manage" ? "marketplace-manage" : "player";
   const activationToken = routeMode === "activate" ? new URLSearchParams(window.location.search).get("token") : null;
   const layoutPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).has("layout-preview");
   const [user, setUser] = useState<{ id: number; name: string; role: string; slug?: string; pinBalance?: number; firstPurchaseBonusGranted?: boolean; canAccessAnalytics?: boolean } | null>(
@@ -171,7 +173,7 @@ function MainApp() {
           <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400">Podchody 2.0</p>
           <h1 className="mb-3 text-2xl font-bold text-green-950 dark:text-green-300">Zanim rozpoczniesz grę</h1>
           <p className="mb-6 text-sm leading-6 text-gray-600 dark:text-gray-300">
-            Zapoznaj się z zasadami bezpiecznej zabawy i korzystania z Pysne.com.pl. Odbiorcy korzystają bezpłatnie, a Kreatorzy mogą jednorazowo dokupić pakiet pinezek.
+            Zapoznaj się z zasadami bezpiecznej zabawy i korzystania z Pysne.com.pl. Odbiorca wpisuje token na stronie głównej bez konta i logowania. Kreator po zalogowaniu tworzy pinezki i może dokupić ich pakiet.
           </p>
           <div className="flex flex-col items-center gap-4">
             <a href="/regulamin.html" className="font-semibold text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">
@@ -201,6 +203,10 @@ function MainApp() {
     );
   }
 
+  if (routeMode === "marketplace") {
+    return <MarketplaceScreen />;
+  }
+
   if (!user && !guestData) {
     return (
       <AuthScreen
@@ -218,6 +224,13 @@ function MainApp() {
       return <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6 text-center dark:bg-gray-950 dark:text-gray-100"><section className="max-w-md rounded-2xl border bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900"><h1 className="text-xl font-bold">Brak dostępu</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Panel analityczny jest dostępny tylko dla uprawnionych kont.</p><a href="/" className="mt-5 inline-block rounded-lg bg-green-800 px-4 py-2 font-semibold text-white">Wróć do strony głównej</a></section></main>;
     }
     return <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">Ładowanie analityki…</div>}><AnalyticsScreen userId={user.id} userName={user.name} theme={theme} onToggleTheme={handleToggleTheme} /></Suspense>;
+  }
+
+  if (routeMode === "marketplace-manage" && user) {
+    if (user.role !== "admin") {
+      return <main className="flex min-h-screen items-center justify-center p-6 text-center"><section className="max-w-md rounded-2xl border bg-white p-8 dark:border-gray-800 dark:bg-gray-900"><h1 className="text-xl font-bold">Brak dostępu</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Ofertami zarządza Kreator przypisany do pinezki.</p><a href="/panel" className="mt-5 inline-block rounded-lg bg-green-800 px-4 py-2 font-semibold text-white">Wróć do panelu</a></section></main>;
+    }
+    return <MarketplaceManageScreen creatorName={user.name} />;
   }
 
   return (
@@ -240,6 +253,8 @@ function Router() {
       <Route path="/panel" component={MainApp} />
       <Route path="/activate" component={MainApp} />
       <Route path="/analytics" component={MainApp} />
+      <Route path="/oferty" component={MainApp} />
+      <Route path="/marketplace/manage" component={MainApp} />
       <Route path="/" component={MainApp} />
       <Route component={NotFound} />
     </Switch>

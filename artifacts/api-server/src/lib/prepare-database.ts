@@ -100,6 +100,85 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS stripe_pin_purchases_payment_intent_idx ON stripe_pin_purchases (stripe_payment_intent_id)");
   await pool.query("CREATE INDEX CONCURRENTLY IF NOT EXISTS stripe_pin_purchases_creator_paid_idx ON stripe_pin_purchases (creator_user_id, paid_at DESC)");
 
+  // Additive marketplace tables. Existing markers and guest token redemptions
+  // remain unchanged; offers are optional records attached to a creator-owned
+  // marker. Quantity is held atomically when a reservation is requested.
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_offers (
+    id serial PRIMARY KEY,
+    marker_id integer NOT NULL UNIQUE REFERENCES markers(id) ON DELETE RESTRICT,
+    creator_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    price_cents integer NOT NULL DEFAULT 0 CHECK (price_cents >= 0),
+    currency text NOT NULL DEFAULT 'pln' CHECK (currency = 'pln'),
+    quantity_total integer NOT NULL CHECK (quantity_total > 0),
+    quantity_available integer NOT NULL CHECK (quantity_available >= 0),
+    pickup_details text NOT NULL,
+    pickup_until timestamptz,
+    status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (quantity_available <= quantity_total)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_reservations (
+    id serial PRIMARY KEY,
+    offer_id integer NOT NULL REFERENCES marketplace_offers(id) ON DELETE RESTRICT,
+    creator_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    guest_session_hash text NOT NULL,
+    quantity integer NOT NULL DEFAULT 1 CHECK (quantity = 1),
+    price_cents integer NOT NULL CHECK (price_cents >= 0),
+    currency text NOT NULL DEFAULT 'pln' CHECK (currency = 'pln'),
+    status text NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'accepted', 'rejected', 'cancelled', 'expired', 'picked_up')),
+    pickup_code_hash text NOT NULL,
+    response_deadline timestamptz NOT NULL,
+    pickup_expires_at timestamptz,
+    requested_at timestamptz NOT NULL DEFAULT now(),
+    accepted_at timestamptz,
+    picked_up_at timestamptz,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_requests (
+    id serial PRIMARY KEY,
+    guest_session_hash text NOT NULL,
+    category text,
+    description text NOT NULL,
+    budget_cents integer CHECK (budget_cents IS NULL OR budget_cents >= 0),
+    lat double precision NOT NULL CHECK (lat >= -90 AND lat <= 90),
+    lng double precision NOT NULL CHECK (lng >= -180 AND lng <= 180),
+    radius_km integer NOT NULL CHECK (radius_km BETWEEN 1 AND 50),
+    needed_by timestamptz,
+    status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_proposals (
+    id serial PRIMARY KEY,
+    request_id integer NOT NULL REFERENCES marketplace_requests(id) ON DELETE CASCADE,
+    creator_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    offer_id integer NOT NULL REFERENCES marketplace_offers(id) ON DELETE RESTRICT,
+    message text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (request_id, creator_user_id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_events (
+    id bigserial PRIMARY KEY,
+    actor_user_id integer REFERENCES users(id) ON DELETE SET NULL,
+    guest_session_hash text,
+    offer_id integer REFERENCES marketplace_offers(id) ON DELETE SET NULL,
+    reservation_id integer REFERENCES marketplace_reservations(id) ON DELETE SET NULL,
+    request_id integer REFERENCES marketplace_requests(id) ON DELETE SET NULL,
+    event_type text NOT NULL CHECK (event_type IN ('offer_view', 'reservation_requested', 'reservation_accepted', 'reservation_rejected', 'reservation_cancelled', 'reservation_expired', 'reservation_picked_up', 'request_created', 'proposal_created')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    view_day date NOT NULL DEFAULT CURRENT_DATE,
+    details jsonb NOT NULL DEFAULT '{}'::jsonb
+  )`);
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS marketplace_offer_view_once_daily ON marketplace_events (offer_id, guest_session_hash, view_day) WHERE event_type = 'offer_view' AND guest_session_hash IS NOT NULL");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_offers_status_location_idx ON marketplace_offers (status, pickup_until)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_offers_creator_idx ON marketplace_offers (creator_user_id, updated_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_reservations_creator_status_idx ON marketplace_reservations (creator_user_id, status, response_deadline)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_reservations_guest_idx ON marketplace_reservations (guest_session_hash, requested_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_requests_created_idx ON marketplace_requests (status, created_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_proposals_request_idx ON marketplace_proposals (request_id, created_at)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_events_offer_idx ON marketplace_events (offer_id, event_type, created_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_events_creator_idx ON marketplace_events (actor_user_id, event_type, created_at DESC)");
+
   const admins = await db
     .select({ id: usersTable.id, passwordHash: usersTable.passwordHash })
     .from(usersTable)
