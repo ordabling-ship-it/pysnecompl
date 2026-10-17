@@ -126,8 +126,8 @@ async function withTransaction<T>(work: (client: any) => Promise<T>): Promise<T>
   }
 }
 
-function parseOfferId(value: string): number | null {
-  const id = Number(value);
+function parseOfferId(value: string | string[]): number | null {
+  const id = Number(Array.isArray(value) ? value[0] : value);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
@@ -344,7 +344,7 @@ router.post("/marketplace/reservations", async (req, res): Promise<void> => {
     );
     return { reservation };
   });
-  if ("error" in outcome) { res.status(outcome.status).json({ error: outcome.error }); return; }
+  if ("error" in outcome) { res.status(outcome.status ?? 400).json({ error: outcome.error }); return; }
   // Code is shown to the visitor once, never logged or placed in a URL. Only
   // the hash is stored; the Creator later verifies it transactionally.
   res.status(201).json({ ...outcome.reservation, pickupCode, message: "Zapisz kod. Będzie potrzebny przy odbiorze po przyjęciu rezerwacji." });
