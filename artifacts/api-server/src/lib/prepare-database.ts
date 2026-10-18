@@ -121,12 +121,14 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_reservations (
     id serial PRIMARY KEY,
     offer_id integer NOT NULL REFERENCES marketplace_offers(id) ON DELETE RESTRICT,
+    request_id integer,
+    proposal_id integer,
     creator_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     guest_session_hash text NOT NULL,
     quantity integer NOT NULL DEFAULT 1 CHECK (quantity = 1),
     price_cents integer NOT NULL CHECK (price_cents >= 0),
     currency text NOT NULL DEFAULT 'pln' CHECK (currency = 'pln'),
-    status text NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'accepted', 'rejected', 'cancelled', 'expired', 'picked_up')),
+    status text NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'accepted', 'payment_pending', 'paid', 'pickup_ready', 'rejected', 'cancelled', 'expired', 'picked_up', 'refunded', 'disputed')),
     pickup_code_hash text NOT NULL,
     response_deadline timestamptz NOT NULL,
     pickup_expires_at timestamptz,
@@ -143,9 +145,9 @@ export async function prepareDatabase(): Promise<void> {
     budget_cents integer CHECK (budget_cents IS NULL OR budget_cents >= 0),
     lat double precision NOT NULL CHECK (lat >= -90 AND lat <= 90),
     lng double precision NOT NULL CHECK (lng >= -180 AND lng <= 180),
-    radius_km integer NOT NULL CHECK (radius_km BETWEEN 1 AND 50),
+    radius_km numeric(6,3) NOT NULL CHECK (radius_km BETWEEN 0.1 AND 50),
     needed_by timestamptz,
-    status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+    status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed', 'cancelled', 'expired')),
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_proposals (
@@ -164,7 +166,7 @@ export async function prepareDatabase(): Promise<void> {
     offer_id integer REFERENCES marketplace_offers(id) ON DELETE SET NULL,
     reservation_id integer REFERENCES marketplace_reservations(id) ON DELETE SET NULL,
     request_id integer REFERENCES marketplace_requests(id) ON DELETE SET NULL,
-    event_type text NOT NULL CHECK (event_type IN ('offer_view', 'reservation_requested', 'reservation_accepted', 'reservation_rejected', 'reservation_cancelled', 'reservation_expired', 'reservation_picked_up', 'request_created', 'proposal_created')),
+    event_type text NOT NULL CHECK (event_type IN ('offer_view', 'reservation_requested', 'reservation_accepted', 'reservation_rejected', 'reservation_cancelled', 'reservation_expired', 'reservation_picked_up', 'request_created', 'proposal_created', 'proposal_accepted')),
     created_at timestamptz NOT NULL DEFAULT now(),
     view_day date NOT NULL DEFAULT CURRENT_DATE,
     details jsonb NOT NULL DEFAULT '{}'::jsonb
@@ -178,6 +180,35 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query("CREATE INDEX IF NOT EXISTS marketplace_proposals_request_idx ON marketplace_proposals (request_id, created_at)");
   await pool.query("CREATE INDEX IF NOT EXISTS marketplace_events_offer_idx ON marketplace_events (offer_id, event_type, created_at DESC)");
   await pool.query("CREATE INDEX IF NOT EXISTS marketplace_events_creator_idx ON marketplace_events (actor_user_id, event_type, created_at DESC)");
+
+  // The recipient-request flow uses a fixed 500 m placement radius. These
+  // additive migrations also make proposal acceptance idempotent: a refresh
+  // cannot create a second reservation or charge the recipient twice.
+  await pool.query(`DO $$ BEGIN
+    ALTER TABLE marketplace_requests ALTER COLUMN radius_km TYPE numeric(6,3) USING radius_km::numeric;
+  EXCEPTION WHEN duplicate_column THEN NULL;
+  END $$`);
+  await pool.query(`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_requests_radius_km_check') THEN
+      ALTER TABLE marketplace_requests DROP CONSTRAINT marketplace_requests_radius_km_check;
+    END IF;
+    ALTER TABLE marketplace_requests ADD CONSTRAINT marketplace_requests_radius_km_check CHECK (radius_km BETWEEN 0.1 AND 50);
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`);
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS request_id integer");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS proposal_id integer");
+  await pool.query(`DO $$ BEGIN
+    ALTER TABLE marketplace_reservations ADD CONSTRAINT marketplace_reservations_request_fk FOREIGN KEY (request_id) REFERENCES marketplace_requests(id) ON DELETE SET NULL;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`);
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS marketplace_reservations_proposal_unique ON marketplace_reservations (proposal_id) WHERE proposal_id IS NOT NULL");
+  await pool.query(`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_events_event_type_check') THEN
+      ALTER TABLE marketplace_events DROP CONSTRAINT marketplace_events_event_type_check;
+    END IF;
+    ALTER TABLE marketplace_events ADD CONSTRAINT marketplace_events_event_type_check CHECK (event_type IN ('offer_view', 'reservation_requested', 'reservation_accepted', 'reservation_rejected', 'reservation_cancelled', 'reservation_expired', 'reservation_picked_up', 'request_created', 'proposal_created', 'proposal_accepted'));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`);
 
   // Marketplace payments use Stripe Connect separate charges and transfers:
   // Stripe holds the platform charge until pickup, then the application sends

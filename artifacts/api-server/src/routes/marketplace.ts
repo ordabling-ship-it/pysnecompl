@@ -11,6 +11,7 @@ const GUEST_COOKIE = "pysne_market_guest";
 const GUEST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const RESPONSE_WINDOW_HOURS = 24;
 const PICKUP_WINDOW_DAYS = 7;
+const RECIPIENT_PLACEMENT_RADIUS_KM = 0.5;
 const requestLimits = new Map<string, { count: number; until: number }>();
 
 type Coordinates = { lat: number; lng: number };
@@ -175,8 +176,8 @@ router.get("/marketplace/offers", async (req, res): Promise<void> => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
   const radiusKm = Number(req.query.radiusKm ?? 10);
-  if (!validCoordinates(lat, lng) || !Number.isFinite(radiusKm) || radiusKm < 1 || radiusKm > 50) {
-    res.status(400).json({ error: "Wskaż prawidłową lokalizację i promień od 1 do 50 km." });
+  if (!validCoordinates(lat, lng) || !Number.isFinite(radiusKm) || radiusKm < 0.5 || radiusKm > 50) {
+    res.status(400).json({ error: "Wskaż prawidłową lokalizację i promień od 500 m do 50 km." });
     return;
   }
 
@@ -588,12 +589,11 @@ router.post("/marketplace/requests", async (req, res): Promise<void> => {
   const budgetPln = body.budgetPln === "" || body.budgetPln == null ? null : Number(body.budgetPln);
   const lat = Number(body.lat);
   const lng = Number(body.lng);
-  const radiusKm = Number(body.radiusKm);
   const neededBy = body.neededBy ? new Date(body.neededBy) : null;
-  if (description.length < 10 || description.length > 1000 || !validCoordinates(lat, lng) || !Number.isSafeInteger(radiusKm) || radiusKm < 1 || radiusKm > 50 ||
+  if (description.length < 10 || description.length > 1000 || !validCoordinates(lat, lng) ||
       (budgetPln !== null && (!Number.isFinite(budgetPln) || budgetPln < 0 || budgetPln > 1_000_000)) ||
       (neededBy && (!Number.isFinite(neededBy.getTime()) || neededBy <= new Date()))) {
-    res.status(400).json({ error: "Sprawdź opis, lokalizację, promień, budżet i termin." }); return;
+    res.status(400).json({ error: "Sprawdź opis, lokalizację, budżet i termin." }); return;
   }
   const guestHash = getGuestHash(req, res, true)!;
   const result = await withTransaction(async (client) => {
@@ -603,13 +603,104 @@ router.post("/marketplace/requests", async (req, res): Promise<void> => {
     const request = await client.query(
       `INSERT INTO marketplace_requests (guest_session_hash, category, description, budget_cents, lat, lng, radius_km, needed_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, status, created_at AS "createdAt"`,
-      [guestHash, category || null, description, budgetPln === null ? null : Math.round(budgetPln * 100), normalizeCoordinates(lat, lng, 2)!.lat, normalizeCoordinates(lat, lng, 2)!.lng, radiusKm, neededBy],
+      [guestHash, category || null, description, budgetPln === null ? null : Math.round(budgetPln * 100), normalizeCoordinates(lat, lng, 5)!.lat, normalizeCoordinates(lat, lng, 5)!.lng, RECIPIENT_PLACEMENT_RADIUS_KM, neededBy],
     );
     await client.query("INSERT INTO marketplace_events (guest_session_hash, request_id, event_type) VALUES ($1, $2, 'request_created')", [guestHash, request.rows[0].id]);
     return request.rows[0];
   });
   if (!result) { res.status(429).json({ error: "Możesz wysłać maksymalnie 3 zapytania dziennie z tej przeglądarki." }); return; }
-  res.status(201).json(result);
+  res.status(201).json({ ...result, radiusKm: RECIPIENT_PLACEMENT_RADIUS_KM });
+});
+
+// The recipient accepts one Creator proposal. The reservation and inventory
+// hold are created atomically, then Stripe Checkout is started for the same
+// reservation. A unique proposal_id makes retries safe after a browser
+// refresh or a network timeout.
+router.post("/marketplace/requests/:requestId/proposals/:proposalId/checkout", async (req, res): Promise<void> => {
+  if (!publicWriteGuard(req, res)) return;
+  if (!requestAllowed(req, "proposal-checkout", 8)) { res.status(429).json({ error: "Za dużo prób. Spróbuj ponownie za minutę." }); return; }
+  const requestId = parseOfferId(req.params.requestId);
+  const proposalId = parseOfferId(req.params.proposalId);
+  const guestHash = getGuestHash(req, res, false);
+  if (!requestId || !proposalId || !guestHash) { res.status(404).json({ error: "Nie znaleziono tego zapytania." }); return; }
+
+  const pickupCode = generatePickupCode();
+  const pickupCodeHash = hashPickupCode(pickupCode);
+  const pickupCodeCiphertext = encryptPickupCode(pickupCode, process.env.SESSION_SECRET ?? "");
+  if (!pickupCodeCiphertext) { res.status(503).json({ error: "Bezpieczne kody odbioru nie są jeszcze skonfigurowane." }); return; }
+
+  const outcome = await withTransaction(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [guestHash]);
+    await releaseExpired(client);
+    const existing = await client.query(
+      `SELECT id, status, price_cents AS "priceCents" FROM marketplace_reservations
+        WHERE proposal_id = $1 AND guest_session_hash = $2 FOR UPDATE`,
+      [proposalId, guestHash],
+    );
+    if (existing.rows[0]) return { reservation: existing.rows[0] };
+
+    const candidate = await client.query(
+      `SELECT r.id AS "requestId", p.id AS "proposalId", p.offer_id AS "offerId",
+              o.creator_user_id AS "creatorUserId", o.price_cents AS "priceCents", o.currency,
+              o.quantity_available AS "quantityAvailable"
+         FROM marketplace_requests r
+         JOIN marketplace_proposals p ON p.request_id = r.id
+         JOIN marketplace_offers o ON o.id = p.offer_id
+         JOIN markers m ON m.id = o.marker_id
+        WHERE r.id = $1 AND p.id = $2 AND r.guest_session_hash = $3
+          AND r.status = 'open' AND o.status = 'active' AND o.quantity_available > 0
+          AND m.archived_at IS NULL
+          AND ${distanceBetweenSql("m.lat", "m.lng", "r.lat", "r.lng")} <= r.radius_km
+        FOR UPDATE`,
+      [requestId, proposalId, guestHash],
+    );
+    const row = candidate.rows[0];
+    if (!row) return { error: "Ta propozycja nie jest już dostępna albo przekracza promień 500 m.", status: 409 };
+
+    const held = await client.query(
+      `UPDATE marketplace_offers SET quantity_available = quantity_available - 1, updated_at = now()
+        WHERE id = $1 AND status = 'active' AND quantity_available > 0 RETURNING id`,
+      [row.offerId],
+    );
+    if (!held.rows[0]) return { error: "Oferta została właśnie zajęta przez inną osobę.", status: 409 };
+
+    const paid = Number(row.priceCents) > 0;
+    const inserted = await client.query(
+      `INSERT INTO marketplace_reservations
+        (offer_id, request_id, proposal_id, creator_user_id, guest_session_hash, price_cents, currency,
+         status, payment_status, pickup_code_hash, pickup_code_ciphertext, response_deadline,
+         accepted_at, pickup_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7,
+         CASE WHEN $8 THEN 'accepted' ELSE 'pickup_ready' END,
+         CASE WHEN $8 THEN 'pending' ELSE 'not_required' END,
+         $9, $10, now(), now(), now() + ($11::integer * interval '1 day'))
+       RETURNING id, status, price_cents AS "priceCents"`,
+      [row.offerId, row.requestId, row.proposalId, row.creatorUserId, guestHash, row.priceCents, row.currency,
+        paid, pickupCodeHash, pickupCodeCiphertext, PICKUP_WINDOW_DAYS],
+    );
+    await client.query("UPDATE marketplace_requests SET status = 'closed' WHERE id = $1 AND status = 'open'", [requestId]);
+    await client.query(
+      `INSERT INTO marketplace_events (guest_session_hash, actor_user_id, offer_id, reservation_id, request_id, event_type)
+       VALUES ($1, NULL, $2, $3, $4, 'proposal_accepted')`,
+      [guestHash, row.offerId, inserted.rows[0].id, requestId],
+    );
+    return { reservation: inserted.rows[0] };
+  });
+
+  if ("error" in outcome) { res.status(outcome.status ?? 400).json({ error: outcome.error }); return; }
+  const reservation = outcome.reservation;
+  if (reservation.status === "pickup_ready") {
+    res.json({ reservationId: reservation.id, status: reservation.status, paymentRequired: false });
+    return;
+  }
+  try {
+    const checkout = await createMarketplaceCheckout(reservation.id, guestHash);
+    if ("error" in checkout) { res.status(checkout.status).json({ reservationId: reservation.id, error: checkout.error }); return; }
+    res.json({ reservationId: reservation.id, status: "accepted", paymentRequired: true, url: checkout.url });
+  } catch (error) {
+    logger.error({ error, reservationId: reservation.id }, "Proposal Checkout could not be created");
+    res.status(502).json({ reservationId: reservation.id, error: "Nie udało się rozpocząć płatności. Spróbuj ponownie." });
+  }
 });
 
 router.get("/marketplace/requests/guest", async (req, res): Promise<void> => {
@@ -620,11 +711,13 @@ router.get("/marketplace/requests/guest", async (req, res): Promise<void> => {
     `SELECT r.id, r.category, r.description, r.budget_cents AS "budgetCents", r.radius_km AS "radiusKm",
             r.needed_by AS "neededBy", r.status, r.created_at AS "createdAt",
             COALESCE(json_agg(json_build_object('id', p.id, 'message', p.message, 'createdAt', p.created_at,
-              'creatorName', u.name, 'offerTitle', m.title, 'priceCents', o.price_cents, 'offerId', o.id))
+              'creatorName', u.name, 'offerTitle', m.title, 'priceCents', o.price_cents, 'offerId', o.id,
+              'reservationId', rr.id, 'reservationStatus', rr.status, 'paymentStatus', rr.payment_status))
               FILTER (WHERE p.id IS NOT NULL), '[]'::json) AS proposals
        FROM marketplace_requests r LEFT JOIN marketplace_proposals p ON p.request_id = r.id
        LEFT JOIN users u ON u.id = p.creator_user_id LEFT JOIN marketplace_offers o ON o.id = p.offer_id
        LEFT JOIN markers m ON m.id = o.marker_id
+       LEFT JOIN marketplace_reservations rr ON rr.proposal_id = p.id AND rr.guest_session_hash = r.guest_session_hash
       WHERE r.guest_session_hash = $1 GROUP BY r.id ORDER BY r.created_at DESC LIMIT 30`,
     [guestHash],
   );

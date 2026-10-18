@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { eq, and, isNull, gt, or, inArray } from "drizzle-orm";
+import { eq, and, isNull, gt, or, inArray, sql } from "drizzle-orm";
 import { db, accountInvitesTable, auditLogsTable, usersTable, markersTable } from "@workspace/db";
 import {
   AdminLoginBody,
@@ -58,7 +58,8 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
     return;
   }
 
-  const { username, password } = parsed.data;
+  const username = parsed.data.username.trim();
+  const { password } = parsed.data;
   const now = Date.now();
   const attemptKey = loginKey(req.ip, username);
   if (isLoginBlocked(attemptKey, now)) {
@@ -77,7 +78,11 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
     .from(usersTable)
     .where(and(
       inArray(usersTable.role, ["admin", "moderator", "master_admin"]),
-      or(eq(usersTable.name, username), eq(usersTable.slug, username), eq(usersTable.email, username)),
+      or(
+        sql`lower(${usersTable.name}) = lower(${username})`,
+        sql`lower(${usersTable.slug}) = lower(${username})`,
+        sql`lower(${usersTable.email}) = lower(${username})`,
+      ),
     ));
 
   if (!user) {

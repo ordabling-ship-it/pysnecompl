@@ -16,7 +16,7 @@ import {
   toPriceCents,
 } from "../src/lib/marketplace-core.mjs";
 
-test("coordinates are validated and customer request locations are rounded", () => {
+test("coordinates are validated and the rounding helper is deterministic", () => {
   assert.deepEqual(normalizeCoordinates(52.22971, 21.01224, 2), { lat: 52.23, lng: 21.01 });
   assert.equal(normalizeCoordinates(91, 0), null);
   assert.equal(normalizeCoordinates(0, NaN), null);
@@ -74,4 +74,14 @@ test("pickup code can be encrypted for paid delivery and decrypted server-side",
 test("public marketplace routes are mounted before catch-all admin routers", async () => {
   const routes = await readFile(new URL("../src/routes/index.ts", import.meta.url), "utf8");
   assert.ok(routes.indexOf("router.use(marketplaceRouter)") < routes.indexOf("router.use(statsRouter)"));
+});
+
+test("recipient requests use a fixed 500 m placement radius and idempotent proposal checkout", async () => {
+  const routes = await readFile(new URL("../src/routes/marketplace.ts", import.meta.url), "utf8");
+  const schema = await readFile(new URL("../src/lib/prepare-database.ts", import.meta.url), "utf8");
+  assert.match(routes, /RECIPIENT_PLACEMENT_RADIUS_KM = 0\.5/);
+  assert.match(routes, /\/marketplace\/requests\/:requestId\/proposals\/:proposalId\/checkout/);
+  assert.match(routes, /normalizeCoordinates\(lat, lng, 5\)/);
+  assert.match(schema, /marketplace_reservations_proposal_unique/);
+  assert.match(routes, /<= r\.radius_km/);
 });

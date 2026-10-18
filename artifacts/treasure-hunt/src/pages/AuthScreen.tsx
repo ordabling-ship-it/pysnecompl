@@ -177,7 +177,7 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                   Odkryj skarb
                 </Button>
                 <a href="/panel" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">Logowanie do panelu</a>
-                <Button type="button" variant="outline" className="w-full" onClick={() => setView("marketplace")}><MapPin className="mr-2 h-4 w-4" />Przeglądaj lokalne oferty</Button>
+                <Button type="button" variant="outline" className="w-full" onClick={() => setView("marketplace")}><MapPin className="mr-2 h-4 w-4" />Wybierz miejsce poszukiwań</Button>
               </CardFooter>
             </form>
           </>

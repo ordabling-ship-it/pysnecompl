@@ -18,7 +18,7 @@ type Reservation = {
   responseDeadline: string; pickupExpiresAt: string | null; requestedAt: string;
   offerTitle: string; pickupDetails: string;
 };
-type Proposal = { id: number; message: string; creatorName: string; offerTitle: string; priceCents: number; createdAt: string };
+type Proposal = { id: number; message: string; creatorName: string; offerTitle: string; priceCents: number; createdAt: string; reservationId?: number | null; reservationStatus?: string | null; paymentStatus?: string | null };
 type SearchRequest = { id: number; category: string | null; description: string; budgetCents: number | null; radiusKm: number; neededBy: string | null; status: string; proposals: Proposal[] };
 
 const money = (cents: number) => `${(cents / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
@@ -46,7 +46,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const layerRef = useRef<L.LayerGroup | null>(null);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
-  const [radiusKm, setRadiusKm] = useState("10");
+  const [radiusKm, setRadiusKm] = useState("0.5");
   const [offers, setOffers] = useState<Offer[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [requests, setRequests] = useState<SearchRequest[]>([]);
@@ -73,8 +73,8 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   useEffect(() => {
     if (!mapElement.current || mapRef.current) return;
     const map = L.map(mapElement.current, { scrollWheelZoom: false }).setView([52, 19], 6);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: "© OpenStreetMap",
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      maxZoom: 19, attribution: "© OpenStreetMap © CARTO",
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     map.on("click", (event) => {
@@ -135,7 +135,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const locate = () => {
     if (!navigator.geolocation) { setError("Ta przeglądarka nie udostępnia lokalizacji."); return; }
     navigator.geolocation.getCurrentPosition(
-      (position) => { setLat(position.coords.latitude.toFixed(5)); setLng(position.coords.longitude.toFixed(5)); setError(null); setNotice("Lokalizacja została pobrana za Twoją zgodą. Teraz wybierz promień wyszukiwania."); },
+      (position) => { setLat(position.coords.latitude.toFixed(5)); setLng(position.coords.longitude.toFixed(5)); setError(null); setNotice("Lokalizacja została pobrana za Twoją zgodą. Możesz teraz wyszukać skarby w pobliżu albo dodać zapytanie dla Kreatora."); },
       () => setError("Nie uzyskano dostępu do lokalizacji. Wybierz miejsce kliknięciem na mapie."),
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
     );
@@ -156,6 +156,22 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
       const result = await api<{ url: string }>(`/api/marketplace/reservations/${id}/checkout`, { method: "POST", body: JSON.stringify({}) });
       window.location.href = result.url;
     } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się rozpocząć płatności."); }
+  };
+
+  const acceptProposal = async (request: SearchRequest, proposal: Proposal) => {
+    setError(null); setNotice(null);
+    try {
+      const result = await api<{ reservationId: number; status: string; paymentRequired: boolean; url?: string }>(
+        `/api/marketplace/requests/${request.id}/proposals/${proposal.id}/checkout`,
+        { method: "POST", body: JSON.stringify({}) },
+      );
+      if (result.url) {
+        window.location.href = result.url;
+        return;
+      }
+      await loadVisitorData();
+      setNotice("Propozycja została przyjęta. Odbiorca może przekazać kod po znalezieniu skarbu.");
+    } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się przyjąć propozycji."); }
   };
 
   const rateReservation = async (id: number, vote: 1 | -1) => {
@@ -179,7 +195,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
     try {
       await api("/api/marketplace/requests", {
         method: "POST",
-        body: JSON.stringify({ category, description, budgetPln: budget || null, lat: Number(lat), lng: Number(lng), radiusKm: Number(radiusKm), neededBy: neededBy || null }),
+        body: JSON.stringify({ category, description, budgetPln: budget || null, lat: Number(lat), lng: Number(lng), neededBy: neededBy || null }),
       });
       setDescription(""); setBudget(""); setNeededBy(""); setRequestOpen(false);
       setNotice("Zapytanie zostało dodane. Pasujący Kreatorzy mogą wysłać propozycję.");
@@ -205,7 +221,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
         <section className="grid gap-4 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
           <label className="space-y-1 text-sm font-medium">Szerokość geograficzna<Input inputMode="decimal" value={lat} onChange={(event) => setLat(event.target.value)} placeholder="Kliknij mapę lub użyj lokalizacji" /></label>
           <label className="space-y-1 text-sm font-medium">Długość geograficzna<Input inputMode="decimal" value={lng} onChange={(event) => setLng(event.target.value)} placeholder="np. 21.0122" /></label>
-          <label className="space-y-1 text-sm font-medium">Promień<select className="h-10 w-full rounded-md border bg-background px-3" value={radiusKm} onChange={(event) => setRadiusKm(event.target.value)}>{[1, 2, 5, 10, 20, 50].map((n) => <option key={n} value={n}>{n} km</option>)}</select></label>
+          <label className="space-y-1 text-sm font-medium">Promień wyszukiwania<select className="h-10 w-full rounded-md border bg-background px-3" value={radiusKm} onChange={(event) => setRadiusKm(event.target.value)}>{[0.5, 1, 2, 5, 10, 20, 50].map((n) => <option key={n} value={n}>{n === 0.5 ? "500 m" : `${n} km`}</option>)}</select></label>
           <div className="flex gap-2 md:justify-end"><Button type="button" variant="outline" onClick={locate} aria-label="Użyj mojej lokalizacji"><Navigation className="mr-2 h-4 w-4" />Moja lokalizacja</Button><Button type="button" onClick={() => void search()} disabled={loading || !canSearch}><Search className="mr-2 h-4 w-4" />Szukaj</Button></div>
           <p className="md:col-span-4 text-xs text-gray-500 dark:text-gray-400">Wskazówka: kliknij na mapie, aby ustawić punkt wyszukiwania. Lokalizacja Odbiorcy nie jest zapisywana przy szukaniu ofert.</p>
         </section>
@@ -245,15 +261,15 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
           </div>
 
           <div className="space-y-3 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Szukam skarbu</h2><p className="text-sm text-gray-600 dark:text-gray-300">Opisz, czego potrzebujesz. To zapytanie nie tworzy rezerwacji ani płatności.</p></div><Button type="button" variant="outline" onClick={() => setRequestOpen((open) => !open)}>{requestOpen ? "Zamknij" : "Dodaj zapytanie"}</Button></div>
+            <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Wybierz miejsce poszukiwań</h2><p className="text-sm text-gray-600 dark:text-gray-300">Wskaż punkt na mapie. Kreator może przygotować skarb w promieniu 500 m, a płatność nastąpi przed rozpoczęciem gry.</p></div><Button type="button" variant="outline" onClick={() => setRequestOpen((open) => !open)}>{requestOpen ? "Zamknij" : "Dodaj zapytanie"}</Button></div>
             {requestOpen && <form onSubmit={sendRequest} className="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-gray-800">
               <label className="block space-y-1 text-sm font-medium">Czego szukasz?<Textarea required minLength={10} maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Opisz skarb lub usługę" /></label>
               <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1 text-sm font-medium">Kategoria<Input maxLength={50} value={category} onChange={(event) => setCategory(event.target.value)} placeholder="np. jedzenie, warsztat" /></label><label className="space-y-1 text-sm font-medium">Budżet (zł)<Input type="number" min="0" step="0.01" value={budget} onChange={(event) => setBudget(event.target.value)} placeholder="opcjonalnie" /></label></div>
               <label className="block space-y-1 text-sm font-medium">Potrzebuję do<Input type="datetime-local" value={neededBy} onChange={(event) => setNeededBy(event.target.value)} /></label>
-              <p className="text-xs text-gray-500">Zostanie użyta wybrana lokalizacja i promień {radiusKm} km. Dla prywatności obszar jest zaokrąglany.</p>
+              <p className="text-xs text-gray-500">Kreator może umieścić skarb maksymalnie 500 m od wybranego punktu. Dokładna lokalizacja nie jest pokazywana przed płatnością.</p>
               <Button type="submit" disabled={!canSearch || description.trim().length < 10}><Send className="mr-2 h-4 w-4" />Wyślij zapytanie</Button>
             </form>}
-            {requests.map((request) => <div key={request.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700"><p className="text-sm font-medium">{request.description}</p><p className="text-xs text-gray-500">Status: {request.status} · Promień {request.radiusKm} km{request.budgetCents != null ? ` · Budżet ${money(request.budgetCents)}` : ""}</p>{request.proposals.map((proposal) => <div key={proposal.id} className="rounded-lg bg-green-50 p-3 text-sm dark:bg-green-950/30"><strong>{proposal.creatorName}: {proposal.offerTitle}</strong><p>{proposal.message}</p><p className="font-semibold">{money(proposal.priceCents)}</p><p className="text-xs text-gray-500">To propozycja — nie utworzyła rezerwacji ani płatności.</p></div>)}</div>)}
+            {requests.map((request) => <div key={request.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700"><p className="text-sm font-medium">{request.description}</p><p className="text-xs text-gray-500">Status: {request.status} · Promień 500 m{request.budgetCents != null ? ` · Budżet ${money(request.budgetCents)}` : ""}</p>{request.proposals.map((proposal) => <div key={proposal.id} className="rounded-lg bg-green-50 p-3 text-sm dark:bg-green-950/30"><strong>{proposal.creatorName}: {proposal.offerTitle}</strong><p>{proposal.message}</p><p className="font-semibold">{money(proposal.priceCents)}</p>{proposal.reservationId ? <p className="text-xs text-gray-600">Rezerwacja: {proposal.reservationStatus === "pickup_ready" ? "opłacona — kod jest dostępny poniżej" : proposal.reservationStatus}</p> : <><p className="text-xs text-gray-500">Kreator umieścił skarb w promieniu 500 m od Twojego punktu.</p><Button size="sm" onClick={() => void acceptProposal(request, proposal)}>{proposal.priceCents > 0 ? "Przyjmij i zapłać" : "Przyjmij propozycję"}</Button></>}</div>)}</div>)}
           </div>
         </section>
         <p className="text-xs text-gray-500">Płatność jest obsługiwana przez Stripe. Środki są przekazywane Kreatorowi po potwierdzeniu odbioru.</p>

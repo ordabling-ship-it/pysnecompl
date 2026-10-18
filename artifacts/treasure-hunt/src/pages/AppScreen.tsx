@@ -765,8 +765,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     if (!mapRef.current) return;
     tileLayerRef.current?.remove();
     tileLayerRef.current = L.tileLayer(
-      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      { attribution: "&copy; OpenStreetMap contributors" }
+      theme === "dark"
+        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      { attribution: "&copy; OpenStreetMap contributors &copy; CARTO" }
     ).addTo(mapRef.current);
   }, [theme, isAdmin]);
 
