@@ -16,7 +16,8 @@ const app: Express = express();
 // only on the v2 preview service; login/logout remain available for safe auth
 // and role checks.
 const previewReadOnly = process.env.PYSNE_PREVIEW_READ_ONLY === "true";
-const readOnlyAllowedPostRoutes = new Set(["/api/auth/admin-login", "/api/auth/logout"]);
+// Express strips the mount path (`/api`) from req.path inside this middleware.
+const readOnlyAllowedPostRoutes = new Set(["/auth/admin-login", "/auth/logout"]);
 
 if (previewReadOnly) {
   app.use("/api", (req, res, next) => {
