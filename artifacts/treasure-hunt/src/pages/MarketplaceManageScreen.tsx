@@ -6,9 +6,10 @@ import { Textarea } from "@/components/ui/textarea";
 
 type Marker = { id: number; title: string; category: string | null; lat: number; lng: number };
 type Offer = { id: number; markerId: number; title: string; category: string | null; priceCents: number; quantityTotal: number; quantityAvailable: number; pickupDetails: string; pickupUntil: string | null; status: "active" | "paused" };
-type Reservation = { id: number; offerId: number; status: string; priceCents: number; responseDeadline: string; pickupExpiresAt: string | null; requestedAt: string; offerTitle: string };
+type Reservation = { id: number; offerId: number; status: string; paymentStatus?: string; priceCents: number; grossAmountCents?: number; platformFeeCents?: number; creatorNetCents?: number; responseDeadline: string; pickupExpiresAt: string | null; requestedAt: string; offerTitle: string };
 type Request = { id: number; category: string | null; description: string; budgetCents: number | null; radiusKm: number; lat: number; lng: number; neededBy: string | null; createdAt: string };
 type Analytics = { id: number; title: string; views: number; requests: number; accepted: number; rejected: number; picked_up: number; quantityAvailable: number; quantityTotal: number };
+type ConnectStatus = { configured: boolean; onboardingStatus?: string; chargesEnabled: boolean; payoutsEnabled: boolean };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -29,6 +30,7 @@ export default function MarketplaceManageScreen({ creatorName }: { creatorName: 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [analytics, setAnalytics] = useState<Analytics[]>([]);
+  const [connect, setConnect] = useState<ConnectStatus | null>(null);
   const [markerId, setMarkerId] = useState("");
   const [pricePln, setPricePln] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -51,9 +53,18 @@ export default function MarketplaceManageScreen({ creatorName }: { creatorName: 
         api<Analytics[]>("/api/marketplace/analytics"),
       ]);
       setMarkers(markerRows); setOffers(offerRows); setReservations(reservationRows); setRequests(requestRows); setAnalytics(analyticsRows);
+      setConnect(await api<ConnectStatus>("/api/marketplace/connect/status"));
       setMarkerId((current) => current || String(markerRows[0]?.id ?? ""));
     } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się pobrać panelu ofert."); }
   }, []);
+
+  const startConnectOnboarding = async () => {
+    setError(null); setNotice(null);
+    try {
+      const result = await api<{ url: string }>("/api/marketplace/connect/onboarding", { method: "POST", body: JSON.stringify({}) });
+      window.location.href = result.url;
+    } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się rozpocząć konfiguracji wypłat."); }
+  };
 
   useEffect(() => {
     void load();
@@ -119,6 +130,10 @@ export default function MarketplaceManageScreen({ creatorName }: { creatorName: 
         {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
         {notice && <p role="status" className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200">{notice}</p>}
 
+        <section className="rounded-2xl border bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Wypłaty za transakcje</h2><p className="text-sm text-gray-600 dark:text-gray-300">Stripe Connect przechowuje płatność do czasu potwierdzenia odbioru.</p></div>{connect?.chargesEnabled && connect.payoutsEnabled ? <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">Wypłaty aktywne</span> : <Button onClick={() => void startConnectOnboarding()}>{connect?.configured ? "Dokończ konfigurację Stripe" : "Skonfiguruj wypłaty Stripe"}</Button>}</div>
+        </section>
+
         <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <form onSubmit={saveOffer} className="space-y-4 rounded-2xl border bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center gap-2"><PackagePlus className="h-5 w-5 text-green-700" /><h2 className="text-lg font-semibold">Opublikuj ofertę pinezki</h2></div>
@@ -139,9 +154,9 @@ export default function MarketplaceManageScreen({ creatorName }: { creatorName: 
 
         <section className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-3 rounded-2xl border bg-white p-5 dark:border-gray-800 dark:bg-gray-900"><div className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-amber-700" /><h2 className="text-lg font-semibold">Zgłoszenia rezerwacji</h2></div><p className="text-xs text-gray-500">Lista odświeża się co 30 sekund. Odpowiedz w ciągu 24 godzin; po terminie sztuka wraca do oferty.</p>
-            {reservations.length === 0 ? <p className="text-sm text-gray-600 dark:text-gray-300">Brak rezerwacji.</p> : reservations.map((reservation) => <article key={reservation.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700"><div className="flex items-center justify-between gap-2"><strong>{reservation.offerTitle} · {money(reservation.priceCents)}</strong><span className="text-xs font-semibold">{reservation.status}</span></div><p className="text-xs text-gray-500">Zgłoszono: {datetime(reservation.requestedAt)} · Odpowiedź do: {datetime(reservation.responseDeadline)}</p>
+            {reservations.length === 0 ? <p className="text-sm text-gray-600 dark:text-gray-300">Brak rezerwacji.</p> : reservations.map((reservation) => <article key={reservation.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700"><div className="flex items-center justify-between gap-2"><strong>{reservation.offerTitle} · {money(reservation.priceCents)}</strong><span className="text-xs font-semibold">{reservation.status}</span></div><p className="text-xs text-gray-500">Zgłoszono: {datetime(reservation.requestedAt)} · Odpowiedź do: {datetime(reservation.responseDeadline)}</p>{reservation.priceCents > 0 && <p className="text-xs text-gray-500">Kwota brutto {money(reservation.grossAmountCents ?? reservation.priceCents)} · opłata platformy {money(reservation.platformFeeCents ?? 0)} · dla Kreatora {money(reservation.creatorNetCents ?? 0)}</p>}
               {reservation.status === "requested" && <div className="flex gap-2"><Button size="sm" onClick={() => void respond(reservation, "accept")}><Check className="mr-2 h-4 w-4" />Przyjmij</Button><Button size="sm" variant="outline" onClick={() => void respond(reservation, "reject")}><X className="mr-2 h-4 w-4" />Odrzuć</Button></div>}
-              {reservation.status === "accepted" && <div className="flex flex-col gap-2 sm:flex-row"><Input aria-label={`Kod odbioru rezerwacji ${reservation.id}`} inputMode="numeric" maxLength={8} value={pickupCodes[reservation.id] ?? ""} onChange={(event) => setPickupCodes((current) => ({ ...current, [reservation.id]: event.target.value.replace(/\D/g, "").slice(0, 8) }))} placeholder="8-cyfrowy kod Odbiorcy" /><Button type="button" size="sm" disabled={(pickupCodes[reservation.id] ?? "").length !== 8} onClick={() => void confirmPickup(reservation)}><TicketCheck className="mr-2 h-4 w-4" />Potwierdź odbiór</Button></div>}
+              {reservation.status === "pickup_ready" && <div className="flex flex-col gap-2 sm:flex-row"><Input aria-label={`Kod odbioru rezerwacji ${reservation.id}`} inputMode="numeric" maxLength={8} value={pickupCodes[reservation.id] ?? ""} onChange={(event) => setPickupCodes((current) => ({ ...current, [reservation.id]: event.target.value.replace(/\D/g, "").slice(0, 8) }))} placeholder="8-cyfrowy kod Odbiorcy" /><Button type="button" size="sm" disabled={(pickupCodes[reservation.id] ?? "").length !== 8} onClick={() => void confirmPickup(reservation)}><TicketCheck className="mr-2 h-4 w-4" />Potwierdź odbiór</Button></div>}
             </article>)}
           </div>
 
@@ -152,7 +167,7 @@ export default function MarketplaceManageScreen({ creatorName }: { creatorName: 
 
         <section className="space-y-3 rounded-2xl border bg-white p-5 dark:border-gray-800 dark:bg-gray-900"><h2 className="text-lg font-semibold">Wyniki ofert</h2><p className="text-sm text-gray-600 dark:text-gray-300">Wyświetlenie liczy unikalną przeglądarkę raz dziennie. Liczniki zbierają zdarzenia od chwili uruchomienia funkcji; nie ma historycznych odsłon.</p><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{analytics.map((row) => <article key={row.id} className="rounded-xl border p-3 dark:border-gray-700"><h3 className="font-semibold">{row.title}</h3><p className="mt-2 text-sm">Wyświetlenia dzienne: <strong>{row.views}</strong></p><p className="text-sm">Rezerwacje: {row.requests} · przyjęte: {row.accepted}</p><p className="text-sm">Odrzucone: {row.rejected} · odebrane: {row.picked_up}</p><p className="text-xs text-gray-500">Dostępne: {row.quantityAvailable}/{row.quantityTotal}</p></article>)}</div>{analytics.length === 0 && <p className="text-sm text-gray-600 dark:text-gray-300">Statystyki pojawią się po opublikowaniu i wyświetleniu oferty.</p>}</section>
 
-        <p className="text-xs text-gray-500">Rezerwacja nie pobiera pieniędzy i nie uruchamia wypłaty. Pakiety pinezek nadal są sprzedawane osobno przez istniejący Stripe Checkout.</p>
+        <p className="text-xs text-gray-500">Pakiety pinezek nadal są sprzedawane osobno. Transakcje ofert są rozliczane przez Stripe Connect po potwierdzeniu odbioru.</p>
       </div>
     </main>
   );

@@ -10,10 +10,11 @@ type Offer = {
   id: number; creatorName: string; title: string; description: string;
   category: string | null; imageUrl: string | null; lat: number; lng: number;
   priceCents: number; currency: string; availableQuantity: number; pickupDetails: string;
-  pickupUntil: string | null; distanceKm?: number;
+  pickupUntil: string | null; distanceKm?: number; creatorPositive?: number; creatorNegative?: number; creatorRatingCount?: number; creatorBadge?: string;
 };
 type Reservation = {
   id: number; status: string; priceCents: number; currency: string;
+  paymentStatus?: string; grossAmountCents?: number; platformFeeCents?: number; creatorNetCents?: number; pickupCode?: string | null;
   responseDeadline: string; pickupExpiresAt: string | null; requestedAt: string;
   offerTitle: string; pickupDetails: string;
 };
@@ -52,7 +53,6 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [pickupCodes, setPickupCodes] = useState<Record<number, string>>({});
   const [requestOpen, setRequestOpen] = useState(false);
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
@@ -144,13 +144,26 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const reserve = async (offer: Offer) => {
     setError(null); setNotice(null);
     try {
-      const result = await api<{ id: number; pickupCode: string; message: string }>("/api/marketplace/reservations", { method: "POST", body: JSON.stringify({ offerId: offer.id }) });
-      const nextCodes = { ...pickupCodes, [result.id]: result.pickupCode };
-      setPickupCodes(nextCodes);
-      try { localStorage.setItem("pysne_market_pickup_codes", JSON.stringify(nextCodes)); } catch { /* displayed once below */ }
+      const result = await api<{ id: number; message: string }>("/api/marketplace/reservations", { method: "POST", body: JSON.stringify({ offerId: offer.id }) });
       await Promise.all([search(), loadVisitorData()]);
-      setNotice(`Prośba o rezerwację #${result.id} wysłana. ${result.message} Kod odbioru: ${result.pickupCode}.`);
+      setNotice(`Prośba o rezerwację #${result.id} wysłana. ${result.message}`);
     } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się wysłać rezerwacji."); }
+  };
+
+  const startCheckout = async (id: number) => {
+    setError(null); setNotice(null);
+    try {
+      const result = await api<{ url: string }>(`/api/marketplace/reservations/${id}/checkout`, { method: "POST", body: JSON.stringify({}) });
+      window.location.href = result.url;
+    } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się rozpocząć płatności."); }
+  };
+
+  const rateReservation = async (id: number, vote: 1 | -1) => {
+    try {
+      await api(`/api/marketplace/reservations/${id}/rating`, { method: "POST", body: JSON.stringify({ vote }) });
+      setNotice("Dziękujemy za ocenę Kreatora.");
+      await loadVisitorData();
+    } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się zapisać oceny."); }
   };
 
   const cancelReservation = async (id: number) => {
@@ -175,13 +188,6 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   };
 
   const canSearch = useMemo(() => Boolean(lat && lng), [lat, lng]);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("pysne_market_pickup_codes");
-      if (saved) setPickupCodes(JSON.parse(saved) as Record<number, string>);
-    } catch { /* ignore invalid local browser data */ }
-  }, []);
 
   return (
     <main className="min-h-screen bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
@@ -216,7 +222,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
             <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Oferty w pobliżu</h2><span className="text-sm text-gray-500">{offers.length}</span></div>
             {offers.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">Ustaw miejsce i promień, a następnie wybierz „Szukaj”.</p> : <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
               {offers.map((offer) => <article key={offer.id} className="space-y-3 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-                <div className="flex gap-3">{safeImageUrl(offer.imageUrl) && <img src={safeImageUrl(offer.imageUrl) ?? undefined} alt="" className="h-20 w-20 rounded-lg object-cover" />}<div className="min-w-0 flex-1"><h3 className="font-semibold">{offer.title}</h3><p className="text-sm text-gray-600 dark:text-gray-300">{offer.description}</p><p className="mt-1 text-xs text-gray-500">Kreator: {offer.creatorName}{offer.distanceKm != null ? ` · ${offer.distanceKm.toFixed(1)} km` : ""} · Dostępne: {offer.availableQuantity}</p></div></div>
+                <div className="flex gap-3">{safeImageUrl(offer.imageUrl) && <img src={safeImageUrl(offer.imageUrl) ?? undefined} alt="" className="h-20 w-20 rounded-lg object-cover" />}<div className="min-w-0 flex-1"><h3 className="font-semibold">{offer.title}</h3><p className="text-sm text-gray-600 dark:text-gray-300">{offer.description}</p><p className="mt-1 text-xs text-gray-500">Kreator: {offer.creatorName}{offer.distanceKm != null ? ` · ${offer.distanceKm.toFixed(1)} km` : ""} · Dostępne: {offer.availableQuantity}</p><p className="text-xs text-amber-700 dark:text-amber-300">{offer.creatorBadge === "Zaufany" ? "🏆" : offer.creatorBadge === "Sprawdzony" ? "⭐" : offer.creatorBadge === "Bardzo wiarygodny" ? "🏆" : "🟢"} {offer.creatorBadge ?? "Nowy Kreator"}{(offer.creatorRatingCount ?? 0) > 0 ? ` · 👍 ${offer.creatorPositive ?? 0} · 👎 ${offer.creatorNegative ?? 0}` : ""}</p></div></div>
                 <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-lg text-green-800 dark:text-green-300">{money(offer.priceCents)}</strong><span className="text-xs text-gray-500">Odbiór: {time(offer.pickupUntil)}</span></div>
                 <p className="text-sm text-gray-700 dark:text-gray-300"><MapPin className="mr-1 inline h-4 w-4" />{offer.pickupDetails}</p>
                 <Button type="button" className="w-full" onClick={() => void reserve(offer)}><TicketCheck className="mr-2 h-4 w-4" />Chcę ten skarb</Button>
@@ -231,8 +237,10 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
             {reservations.length === 0 ? <p className="text-sm text-gray-600 dark:text-gray-300">Po wysłaniu prośby o rezerwację jej status pojawi się tutaj w tej przeglądarce.</p> : reservations.map((reservation) => <div key={reservation.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700">
               <div className="flex items-center justify-between gap-2"><strong>{reservation.offerTitle} · {money(reservation.priceCents)}</strong><span className="text-xs font-semibold">{reservation.status}</span></div>
               <p className="text-xs text-gray-500">Odpowiedź do: {time(reservation.responseDeadline)}{reservation.pickupExpiresAt ? ` · Odbiór do: ${time(reservation.pickupExpiresAt)}` : ""}</p>
-              {reservation.status === "accepted" && <><p className="text-sm">Miejsce odbioru: {reservation.pickupDetails}</p><p className="text-sm font-semibold">Kod odbioru: {pickupCodes[reservation.id] ?? "Kod został pokazany po zgłoszeniu. Sprawdź zapisany komunikat."}</p></>}
-              {(["requested", "accepted"].includes(reservation.status)) && <Button variant="outline" size="sm" onClick={() => void cancelReservation(reservation.id)}><X className="mr-2 h-4 w-4" />Anuluj rezerwację</Button>}
+              {reservation.status === "accepted" && <div className="space-y-2"><p className="text-sm">Kreator przyjął rezerwację. Opłać ją, aby otrzymać kod odbioru.</p><Button size="sm" onClick={() => void startCheckout(reservation.id)}>Zapłać przez Stripe Checkout</Button></div>}
+              {reservation.status === "pickup_ready" && <><p className="text-sm">Miejsce odbioru: {reservation.pickupDetails}</p><p className="text-sm font-semibold">Kod odbioru: {reservation.pickupCode ?? "Kod będzie dostępny po odświeżeniu."}</p></>}
+              {reservation.status === "picked_up" && <div className="rounded-lg bg-green-50 p-3 text-sm dark:bg-green-950/30"><p>Odbiór zakończony. Oceń Kreatora:</p><div className="mt-2 flex gap-2"><Button size="sm" variant="outline" onClick={() => void rateReservation(reservation.id, 1)}>👍 Dobrze</Button><Button size="sm" variant="outline" onClick={() => void rateReservation(reservation.id, -1)}>👎 Źle</Button></div></div>}
+              {(["requested", "accepted", "pickup_ready"].includes(reservation.status)) && <Button variant="outline" size="sm" onClick={() => void cancelReservation(reservation.id)}><X className="mr-2 h-4 w-4" />Anuluj rezerwację</Button>}
             </div>)}
           </div>
 
@@ -248,7 +256,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
             {requests.map((request) => <div key={request.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700"><p className="text-sm font-medium">{request.description}</p><p className="text-xs text-gray-500">Status: {request.status} · Promień {request.radiusKm} km{request.budgetCents != null ? ` · Budżet ${money(request.budgetCents)}` : ""}</p>{request.proposals.map((proposal) => <div key={proposal.id} className="rounded-lg bg-green-50 p-3 text-sm dark:bg-green-950/30"><strong>{proposal.creatorName}: {proposal.offerTitle}</strong><p>{proposal.message}</p><p className="font-semibold">{money(proposal.priceCents)}</p><p className="text-xs text-gray-500">To propozycja — nie utworzyła rezerwacji ani płatności.</p></div>)}</div>)}
           </div>
         </section>
-        <p className="text-xs text-gray-500">Rezerwacja nie pobiera opłaty online. Płatność marketplace i wypłata po odbiorze wymagają osobnej, zatwierdzonej integracji operatora.</p>
+        <p className="text-xs text-gray-500">Płatność jest obsługiwana przez Stripe. Środki są przekazywane Kreatorowi po potwierdzeniu odbioru.</p>
       </div>
     </main>
   );

@@ -179,6 +179,59 @@ export async function prepareDatabase(): Promise<void> {
   await pool.query("CREATE INDEX IF NOT EXISTS marketplace_events_offer_idx ON marketplace_events (offer_id, event_type, created_at DESC)");
   await pool.query("CREATE INDEX IF NOT EXISTS marketplace_events_creator_idx ON marketplace_events (actor_user_id, event_type, created_at DESC)");
 
+  // Marketplace payments use Stripe Connect separate charges and transfers:
+  // Stripe holds the platform charge until pickup, then the application sends
+  // the creator's net amount to the connected account. These columns are
+  // additive so existing reservations remain readable and cancellable.
+  await pool.query(`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'marketplace_reservations_status_check') THEN
+      ALTER TABLE marketplace_reservations DROP CONSTRAINT marketplace_reservations_status_check;
+    END IF;
+    ALTER TABLE marketplace_reservations ADD CONSTRAINT marketplace_reservations_status_check
+      CHECK (status IN ('requested', 'accepted', 'payment_pending', 'paid', 'pickup_ready', 'rejected', 'cancelled', 'expired', 'picked_up', 'refunded', 'disputed'));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`);
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS pickup_code_ciphertext text");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS stripe_checkout_session_id text");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS stripe_payment_intent_id text");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS stripe_transfer_id text");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'not_required'");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS gross_amount_cents integer NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS platform_fee_cents integer NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS creator_net_cents integer NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS paid_at timestamptz");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS transferred_at timestamptz");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS refunded_at timestamptz");
+  await pool.query("ALTER TABLE marketplace_reservations ADD COLUMN IF NOT EXISTS disputed_at timestamptz");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS marketplace_reservations_checkout_unique ON marketplace_reservations (stripe_checkout_session_id) WHERE stripe_checkout_session_id IS NOT NULL");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS marketplace_reservations_payment_intent_unique ON marketplace_reservations (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL");
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_stripe_accounts (
+    user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    stripe_account_id text NOT NULL UNIQUE,
+    onboarding_status text NOT NULL DEFAULT 'not_started',
+    charges_enabled boolean NOT NULL DEFAULT false,
+    payouts_enabled boolean NOT NULL DEFAULT false,
+    requirements jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_stripe_events (
+    event_id text PRIMARY KEY,
+    event_type text NOT NULL,
+    reservation_id integer REFERENCES marketplace_reservations(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketplace_ratings (
+    id serial PRIMARY KEY,
+    reservation_id integer NOT NULL UNIQUE REFERENCES marketplace_reservations(id) ON DELETE CASCADE,
+    creator_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    guest_session_hash text NOT NULL,
+    vote smallint NOT NULL CHECK (vote IN (-1, 1)),
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_ratings_creator_idx ON marketplace_ratings (creator_user_id, created_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS marketplace_stripe_events_reservation_idx ON marketplace_stripe_events (reservation_id)");
+
   const admins = await db
     .select({ id: usersTable.id, passwordHash: usersTable.passwordHash })
     .from(usersTable)

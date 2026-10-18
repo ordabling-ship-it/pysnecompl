@@ -6,6 +6,7 @@ import { FIRST_PURCHASE_BONUS_PINS, getCreatorPinPackage } from "@workspace/api-
 import { getAuthenticatedAdmin, requireRole, type AdminUser } from "../lib/admin-session";
 import { recordAudit } from "../lib/audit";
 import { creditPendingPurchaseOnce } from "../lib/pin-purchase-credit.mjs";
+import { handleMarketplaceStripeEvent } from "../lib/marketplace-payments";
 
 const router: IRouter = Router();
 
@@ -144,6 +145,13 @@ export async function stripeWebhookHandler(req: Request, res: Response): Promise
     event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
   } catch {
     res.status(400).send("Invalid Stripe signature.");
+    return;
+  }
+
+  // Marketplace events are handled separately from the existing pin-pack
+  // ledger. They are identified by reservation metadata and are idempotent.
+  if (await handleMarketplaceStripeEvent(event)) {
+    res.json({ received: true });
     return;
   }
 

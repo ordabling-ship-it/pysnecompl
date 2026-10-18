@@ -5,6 +5,9 @@ import {
   canCancelReservation,
   canConfirmPickup,
   canRespondToReservation,
+  calculatePlatformFee,
+  decryptPickupCode,
+  encryptPickupCode,
   generatePickupCode,
   hashPickupCode,
   haversineKm,
@@ -50,9 +53,22 @@ test("reservation transitions prevent repeated actions and code reuse", () => {
   assert.equal(canCancelReservation("requested"), true);
   assert.equal(canCancelReservation("accepted"), true);
   assert.equal(canCancelReservation("picked_up"), false);
-  assert.equal(canConfirmPickup("accepted", new Date(Date.now() + 60_000)), true);
+  assert.equal(canConfirmPickup("pickup_ready", new Date(Date.now() + 60_000)), true);
   assert.equal(canConfirmPickup("picked_up", new Date(Date.now() + 60_000)), false);
   assert.equal(canConfirmPickup("accepted", new Date(Date.now() - 1)), false);
+});
+
+test("marketplace fee is fixed 1.23 PLN plus 5 percent", () => {
+  assert.deepEqual(calculatePlatformFee(3000), { grossAmountCents: 3000, platformFeeCents: 273, creatorNetCents: 2727 });
+  assert.deepEqual(calculatePlatformFee(999), { grossAmountCents: 999, platformFeeCents: 173, creatorNetCents: 826 });
+  assert.equal(calculatePlatformFee(-1), null);
+});
+
+test("pickup code can be encrypted for paid delivery and decrypted server-side", () => {
+  const ciphertext = encryptPickupCode("12345678", "test-session-secret");
+  assert.ok(ciphertext);
+  assert.equal(decryptPickupCode(ciphertext, "test-session-secret"), "12345678");
+  assert.equal(decryptPickupCode(ciphertext, "wrong-secret"), null);
 });
 
 test("public marketplace routes are mounted before catch-all admin routers", async () => {

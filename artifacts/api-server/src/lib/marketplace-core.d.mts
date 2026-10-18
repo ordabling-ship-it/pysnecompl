@@ -7,3 +7,6 @@ export function canRespondToReservation(status: string, action: string): boolean
 export function canCancelReservation(status: string): boolean;
 export function canConfirmPickup(status: string, expiresAt: string | Date | null, now?: number): boolean;
 export function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): number | null;
+export function calculatePlatformFee(grossAmountCents: number): { grossAmountCents: number; platformFeeCents: number; creatorNetCents: number } | null;
+export function encryptPickupCode(code: string, secret: string): string | null;
+export function decryptPickupCode(ciphertext: string | null, secret: string): string | null;

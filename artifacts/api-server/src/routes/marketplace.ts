@@ -2,7 +2,9 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { pool } from "@workspace/db";
 import { requireRole, type AdminUser } from "../lib/admin-session";
-import { canCancelReservation, canConfirmPickup, canRespondToReservation, generatePickupCode, hashPickupCode, matchesPickupCode, normalizeCoordinates, toPriceCents } from "../lib/marketplace-core.mjs";
+import { logger } from "../lib/logger";
+import { canCancelReservation, canConfirmPickup, canRespondToReservation, decryptPickupCode, encryptPickupCode, generatePickupCode, hashPickupCode, matchesPickupCode, normalizeCoordinates, toPriceCents } from "../lib/marketplace-core.mjs";
+import { createCreatorOnboarding, createMarketplaceCheckout, refreshCreatorConnectStatus, refundMarketplacePayment, transferMarketplaceAfterPickup } from "../lib/marketplace-payments";
 
 const router: IRouter = Router();
 const GUEST_COOKIE = "pysne_market_guest";
@@ -91,18 +93,25 @@ function publicWriteGuard(req: Request, res: Response): boolean {
   return true;
 }
 
-async function releaseExpired(client: { query: (text: string, values?: unknown[]) => Promise<{ rows: any[] }> }): Promise<void> {
+async function releaseExpired(client: { query: (text: string, values?: unknown[]) => Promise<{ rows: any[] }> } & { __paidExpiredReservationIds?: number[] }): Promise<void> {
   const expired = await client.query(
-    `UPDATE marketplace_reservations SET status = 'expired', pickup_code_hash = '', updated_at = now()
+    `UPDATE marketplace_reservations SET status = 'expired', pickup_code_hash = '', pickup_code_ciphertext = NULL,
+        payment_status = CASE WHEN payment_status = 'paid' THEN 'refund_pending' ELSE 'failed' END,
+        updated_at = now()
       WHERE (status = 'requested' AND response_deadline <= now())
-         OR (status = 'accepted' AND pickup_expires_at <= now())
-      RETURNING id, offer_id, creator_user_id, guest_session_hash`,
+         OR (status IN ('accepted', 'pickup_ready') AND pickup_expires_at <= now())
+      RETURNING id, offer_id, creator_user_id, guest_session_hash, payment_status`,
   );
   for (const row of expired.rows) {
-    await client.query(
-      "UPDATE marketplace_offers SET quantity_available = LEAST(quantity_total, quantity_available + 1), updated_at = now() WHERE id = $1",
-      [row.offer_id],
-    );
+    if (row.payment_status === "refund_pending") {
+      client.__paidExpiredReservationIds ??= [];
+      client.__paidExpiredReservationIds.push(Number(row.id));
+    } else {
+      await client.query(
+        "UPDATE marketplace_offers SET quantity_available = LEAST(quantity_total, quantity_available + 1), updated_at = now() WHERE id = $1",
+        [row.offer_id],
+      );
+    }
     await client.query(
       `INSERT INTO marketplace_events (actor_user_id, guest_session_hash, offer_id, reservation_id, event_type)
        VALUES (NULL, $1, $2, $3, 'reservation_expired')`,
@@ -117,6 +126,10 @@ async function withTransaction<T>(work: (client: any) => Promise<T>): Promise<T>
     await client.query("BEGIN");
     const result = await work(client);
     await client.query("COMMIT");
+    for (const reservationId of (client as any).__paidExpiredReservationIds ?? []) {
+      const refund = await refundMarketplacePayment(reservationId);
+      if (!refund.requested) logger.error({ reservationId, error: refund.error }, "Expired marketplace payment refund could not be started");
+    }
     return result;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -130,6 +143,29 @@ function parseOfferId(value: string | string[]): number | null {
   const id = Number(Array.isArray(value) ? value[0] : value);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
+
+router.get("/marketplace/connect/status", requireRole("admin"), async (_req, res): Promise<void> => {
+  const creator = res.locals.adminUser as AdminUser;
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await refreshCreatorConnectStatus(creator.id));
+  } catch (error) {
+    logger.error({ error, userId: creator.id }, "Stripe Connect status could not be refreshed");
+    res.status(503).json({ error: "Nie udało się sprawdzić konfiguracji wypłat." });
+  }
+});
+
+router.post("/marketplace/connect/onboarding", requireRole("admin"), async (_req, res): Promise<void> => {
+  const creator = res.locals.adminUser as AdminUser;
+  try {
+    const result = await createCreatorOnboarding(creator.id, creator.name);
+    if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
+    res.json(result);
+  } catch (error) {
+    logger.error({ error, userId: creator.id }, "Stripe Connect onboarding could not be created");
+    res.status(502).json({ error: "Nie udało się rozpocząć konfiguracji wypłat." });
+  }
+});
 
 // Public discovery. Search location is supplied by the visitor, and is not
 // stored. Only offers intentionally published by a Creator are returned.
@@ -161,10 +197,18 @@ router.get("/marketplace/offers", async (req, res): Promise<void> => {
     `SELECT o.id, u.name AS "creatorName", m.title, m.description, m.category,
             m.image_url AS "imageUrl", m.lat, m.lng, o.price_cents AS "priceCents",
             o.currency, o.quantity_available AS "availableQuantity", o.pickup_details AS "pickupDetails",
-            o.pickup_until AS "pickupUntil", ${distance} AS "distanceKm"
+            o.pickup_until AS "pickupUntil", ${distance} AS "distanceKm",
+            COALESCE(rep.positive, 0)::int AS "creatorPositive", COALESCE(rep.negative, 0)::int AS "creatorNegative",
+            (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0))::int AS "creatorRatingCount",
+            CASE WHEN (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0)) >= 25 AND rep.positive * 100 >= (rep.positive + rep.negative) * 95 THEN 'Bardzo wiarygodny'
+                 WHEN (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0)) >= 10 AND rep.positive * 100 >= (rep.positive + rep.negative) * 90 THEN 'Zaufany'
+                 WHEN (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0)) >= 5 AND rep.positive * 100 >= (rep.positive + rep.negative) * 80 THEN 'Sprawdzony' ELSE 'Nowy Kreator' END AS "creatorBadge"
        FROM marketplace_offers o
        JOIN markers m ON m.id = o.marker_id AND m.archived_at IS NULL
        JOIN users u ON u.id = o.creator_user_id
+       LEFT JOIN (SELECT creator_user_id, count(*) FILTER (WHERE vote = 1) AS positive,
+                         count(*) FILTER (WHERE vote = -1) AS negative FROM marketplace_ratings GROUP BY creator_user_id) rep
+         ON rep.creator_user_id = o.creator_user_id
       WHERE o.status = 'active' AND o.quantity_available > 0
         AND (o.pickup_until IS NULL OR o.pickup_until > now())
         AND m.lat BETWEEN $4 AND $5 AND ${longitudeBounds}
@@ -195,9 +239,17 @@ router.get("/marketplace/offers/:offerId", async (req, res): Promise<void> => {
     `SELECT o.id, u.name AS "creatorName", m.title,
             m.description, m.category, m.image_url AS "imageUrl", m.lat, m.lng,
             o.price_cents AS "priceCents", o.currency, o.quantity_available AS "availableQuantity",
-            o.pickup_details AS "pickupDetails", o.pickup_until AS "pickupUntil"
+            o.pickup_details AS "pickupDetails", o.pickup_until AS "pickupUntil",
+            COALESCE(rep.positive, 0)::int AS "creatorPositive", COALESCE(rep.negative, 0)::int AS "creatorNegative",
+            (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0))::int AS "creatorRatingCount",
+            CASE WHEN (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0)) >= 25 AND rep.positive * 100 >= (rep.positive + rep.negative) * 95 THEN 'Bardzo wiarygodny'
+                 WHEN (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0)) >= 10 AND rep.positive * 100 >= (rep.positive + rep.negative) * 90 THEN 'Zaufany'
+                 WHEN (COALESCE(rep.positive, 0) + COALESCE(rep.negative, 0)) >= 5 AND rep.positive * 100 >= (rep.positive + rep.negative) * 80 THEN 'Sprawdzony' ELSE 'Nowy Kreator' END AS "creatorBadge"
        FROM marketplace_offers o JOIN markers m ON m.id = o.marker_id
        JOIN users u ON u.id = o.creator_user_id
+       LEFT JOIN (SELECT creator_user_id, count(*) FILTER (WHERE vote = 1) AS positive,
+                         count(*) FILTER (WHERE vote = -1) AS negative FROM marketplace_ratings GROUP BY creator_user_id) rep
+         ON rep.creator_user_id = o.creator_user_id
       WHERE o.id = $1 AND o.status = 'active' AND o.quantity_available > 0 AND m.archived_at IS NULL LIMIT 1`,
     [offerId],
   );
@@ -292,7 +344,9 @@ router.get("/marketplace/mine/reservations", requireRole("admin"), async (_req, 
   const result = await withTransaction(async (client) => {
     await releaseExpired(client);
     return client.query(
-      `SELECT r.id, r.offer_id AS "offerId", r.status, r.price_cents AS "priceCents",
+      `SELECT r.id, r.offer_id AS "offerId", r.status, r.payment_status AS "paymentStatus",
+              r.price_cents AS "priceCents", r.gross_amount_cents AS "grossAmountCents",
+              r.platform_fee_cents AS "platformFeeCents", r.creator_net_cents AS "creatorNetCents",
               r.currency, r.response_deadline AS "responseDeadline", r.pickup_expires_at AS "pickupExpiresAt",
               r.requested_at AS "requestedAt", r.accepted_at AS "acceptedAt",
               m.title AS "offerTitle", r.guest_session_hash IS NOT NULL AS "guestPresent"
@@ -313,6 +367,8 @@ router.post("/marketplace/reservations", async (req, res): Promise<void> => {
   const guestHash = getGuestHash(req, res, true)!;
   const pickupCode = generatePickupCode();
   const pickupCodeHash = hashPickupCode(pickupCode);
+  const pickupCodeCiphertext = encryptPickupCode(pickupCode, process.env.SESSION_SECRET ?? "");
+  if (!pickupCodeCiphertext) { res.status(503).json({ error: "Bezpieczne kody odbioru nie są jeszcze skonfigurowane." }); return; }
   const outcome = await withTransaction(async (client) => {
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [guestHash]);
     await releaseExpired(client);
@@ -331,10 +387,10 @@ router.post("/marketplace/reservations", async (req, res): Promise<void> => {
     const offer = updated.rows[0];
     if (!offer) return { error: "Oferta jest niedostępna lub wyczerpana.", status: 409 };
     const inserted = await client.query(
-      `INSERT INTO marketplace_reservations (offer_id, creator_user_id, guest_session_hash, price_cents, currency, pickup_code_hash, response_deadline)
-       VALUES ($1, $2, $3, $4, $5, $6, now() + ($7::integer * interval '1 hour'))
+      `INSERT INTO marketplace_reservations (offer_id, creator_user_id, guest_session_hash, price_cents, currency, pickup_code_hash, pickup_code_ciphertext, response_deadline)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now() + ($8::integer * interval '1 hour'))
        RETURNING id, status, price_cents AS "priceCents", response_deadline AS "responseDeadline"`,
-      [offer.id, offer.creator_user_id, guestHash, offer.price_cents, offer.currency, pickupCodeHash, RESPONSE_WINDOW_HOURS],
+      [offer.id, offer.creator_user_id, guestHash, offer.price_cents, offer.currency, pickupCodeHash, pickupCodeCiphertext, RESPONSE_WINDOW_HOURS],
     );
     const reservation = inserted.rows[0];
     await client.query(
@@ -345,9 +401,9 @@ router.post("/marketplace/reservations", async (req, res): Promise<void> => {
     return { reservation };
   });
   if ("error" in outcome) { res.status(outcome.status ?? 400).json({ error: outcome.error }); return; }
-  // Code is shown to the visitor once, never logged or placed in a URL. Only
-  // the hash is stored; the Creator later verifies it transactionally.
-  res.status(201).json({ ...outcome.reservation, pickupCode, message: "Zapisz kod. Będzie potrzebny przy odbiorze po przyjęciu rezerwacji." });
+  // The code is encrypted for later delivery after payment. It is never
+  // returned before the Creator accepts and Stripe confirms the payment.
+  res.status(201).json({ ...outcome.reservation, message: "Rezerwacja została wysłana. Kod odbioru pojawi się po akceptacji i płatności." });
 });
 
 router.get("/marketplace/mine/reservations/guest", async (req, res): Promise<void> => {
@@ -357,7 +413,10 @@ router.get("/marketplace/mine/reservations/guest", async (req, res): Promise<voi
   const result = await withTransaction(async (client) => {
     await releaseExpired(client);
     return client.query(
-      `SELECT r.id, r.status, r.price_cents AS "priceCents", r.currency,
+      `SELECT r.id, r.status, r.payment_status AS "paymentStatus", r.price_cents AS "priceCents", r.currency,
+              r.gross_amount_cents AS "grossAmountCents", r.platform_fee_cents AS "platformFeeCents",
+              r.creator_net_cents AS "creatorNetCents", r.stripe_checkout_session_id AS "checkoutSessionId",
+              r.pickup_code_ciphertext AS "pickupCodeCiphertext",
               r.response_deadline AS "responseDeadline", r.pickup_expires_at AS "pickupExpiresAt",
               r.requested_at AS "requestedAt", m.title AS "offerTitle", o.pickup_details AS "pickupDetails"
          FROM marketplace_reservations r JOIN marketplace_offers o ON o.id = r.offer_id
@@ -366,7 +425,13 @@ router.get("/marketplace/mine/reservations/guest", async (req, res): Promise<voi
       [guestHash],
     );
   });
-  res.json(result.rows);
+  res.json(result.rows.map((row: any) => ({
+    ...row,
+    pickupCode: row.status === "pickup_ready" || row.status === "paid"
+      ? decryptPickupCode(row.pickupCodeCiphertext, process.env.SESSION_SECRET ?? "")
+      : null,
+    pickupCodeCiphertext: undefined,
+  })));
 });
 
 router.post("/marketplace/reservations/:reservationId/cancel", async (req, res): Promise<void> => {
@@ -376,12 +441,12 @@ router.post("/marketplace/reservations/:reservationId/cancel", async (req, res):
   if (!guestHash || !reservationId) { res.status(404).json({ error: "Nie znaleziono aktywnej rezerwacji." }); return; }
   const result = await withTransaction(async (client) => {
     await releaseExpired(client);
-    const current = await client.query("SELECT status FROM marketplace_reservations WHERE id = $1 AND guest_session_hash = $2 FOR UPDATE", [reservationId, guestHash]);
+    const current = await client.query("SELECT status, payment_status FROM marketplace_reservations WHERE id = $1 AND guest_session_hash = $2 FOR UPDATE", [reservationId, guestHash]);
     if (!current.rows[0] || !canCancelReservation(current.rows[0].status)) return false;
     const cancelled = await client.query(
-      `UPDATE marketplace_reservations SET status = 'cancelled', pickup_code_hash = '', updated_at = now()
-        WHERE id = $1 AND guest_session_hash = $2 AND status IN ('requested', 'accepted')
-        RETURNING offer_id`,
+      `UPDATE marketplace_reservations SET status = 'cancelled', pickup_code_hash = '', pickup_code_ciphertext = NULL,
+        updated_at = now() WHERE id = $1 AND guest_session_hash = $2 AND status IN ('requested', 'accepted', 'pickup_ready')
+        RETURNING offer_id, payment_status`,
       [reservationId, guestHash],
     );
     if (!cancelled.rows[0]) return false;
@@ -391,10 +456,12 @@ router.post("/marketplace/reservations/:reservationId/cancel", async (req, res):
        VALUES ($1, $2, $3, 'reservation_cancelled')`,
       [guestHash, cancelled.rows[0].offer_id, reservationId],
     );
-    return true;
+    return { offerId: cancelled.rows[0].offer_id, paymentStatus: cancelled.rows[0].payment_status };
   });
   if (!result) { res.status(409).json({ error: "Tej rezerwacji nie można już anulować." }); return; }
-  res.json({ ok: true });
+  const refund = result.paymentStatus === "paid" ? await refundMarketplacePayment(reservationId) : { requested: true };
+  if (!refund.requested) { res.status(502).json({ error: "Rezerwacja anulowana, ale zwrot wymaga ponowienia." }); return; }
+  res.json({ ok: true, refundStatus: result.paymentStatus === "paid" ? "pending" : "not_required" });
 });
 
 router.post("/marketplace/reservations/:reservationId/respond", requireRole("admin"), async (req, res): Promise<void> => {
@@ -402,18 +469,28 @@ router.post("/marketplace/reservations/:reservationId/respond", requireRole("adm
   const reservationId = parseOfferId(req.params.reservationId);
   const action = req.body?.action;
   if (!reservationId || (action !== "accept" && action !== "reject")) { res.status(400).json({ error: "Wybierz przyjęcie albo odrzucenie rezerwacji." }); return; }
+  if (action === "accept") {
+    const reservationPrice = (await pool.query("SELECT price_cents FROM marketplace_reservations WHERE id = $1 AND creator_user_id = $2", [reservationId, creator.id])).rows[0];
+    const account = (await pool.query("SELECT charges_enabled, payouts_enabled FROM marketplace_stripe_accounts WHERE user_id = $1", [creator.id])).rows[0];
+    if (Number(reservationPrice?.price_cents) > 0 && (!account?.charges_enabled || !account?.payouts_enabled)) {
+      res.status(409).json({ error: "Najpierw skonfiguruj aktywne konto Stripe Connect do przyjmowania wypłat." });
+      return;
+    }
+  }
   const result = await withTransaction(async (client) => {
     await releaseExpired(client);
     const reservation = await client.query(
-      "SELECT id, offer_id, status, guest_session_hash, response_deadline FROM marketplace_reservations WHERE id = $1 AND creator_user_id = $2 FOR UPDATE",
+      "SELECT id, offer_id, status, price_cents, guest_session_hash, response_deadline FROM marketplace_reservations WHERE id = $1 AND creator_user_id = $2 FOR UPDATE",
       [reservationId, creator.id],
     );
     const row = reservation.rows[0];
     if (!row || !canRespondToReservation(row.status, action) || new Date(row.response_deadline) <= new Date()) return null;
-    const nextStatus = action === "accept" ? "accepted" : "rejected";
+    const nextStatus = action === "accept" ? (Number(row.price_cents) === 0 ? "pickup_ready" : "accepted") : "rejected";
     const changed = await client.query(
-      `UPDATE marketplace_reservations SET status = $2, accepted_at = CASE WHEN $2 = 'accepted' THEN now() ELSE accepted_at END,
-         pickup_expires_at = CASE WHEN $2 = 'accepted' THEN now() + ($3::integer * interval '1 day') ELSE NULL END,
+      `UPDATE marketplace_reservations SET status = CASE WHEN $2 = 'accepted' AND price_cents = 0 THEN 'pickup_ready' ELSE $2 END,
+         payment_status = CASE WHEN $2 = 'accepted' AND price_cents = 0 THEN 'not_required' WHEN $2 = 'accepted' THEN 'pending' ELSE payment_status END,
+         accepted_at = CASE WHEN $2 IN ('accepted', 'pickup_ready') THEN now() ELSE accepted_at END,
+         pickup_expires_at = CASE WHEN $2 IN ('accepted', 'pickup_ready') THEN now() + ($3::integer * interval '1 day') ELSE NULL END,
          pickup_code_hash = CASE WHEN $2 = 'rejected' THEN '' ELSE pickup_code_hash END, updated_at = now()
        WHERE id = $1 AND status = 'requested' AND response_deadline > now() RETURNING id`,
       [reservationId, nextStatus, PICKUP_WINDOW_DAYS],
@@ -433,6 +510,21 @@ router.post("/marketplace/reservations/:reservationId/respond", requireRole("adm
   res.json(result);
 });
 
+router.post("/marketplace/reservations/:reservationId/checkout", async (req, res): Promise<void> => {
+  if (!publicWriteGuard(req, res)) return;
+  const guestHash = getGuestHash(req, res, false);
+  const reservationId = parseOfferId(req.params.reservationId);
+  if (!guestHash || !reservationId) { res.status(404).json({ error: "Nie znaleziono rezerwacji." }); return; }
+  try {
+    const result = await createMarketplaceCheckout(reservationId, guestHash);
+    if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
+    res.json(result);
+  } catch (error) {
+    logger.error({ error, reservationId }, "Marketplace Checkout could not be created");
+    res.status(502).json({ error: "Nie udało się rozpocząć płatności." });
+  }
+});
+
 router.post("/marketplace/reservations/:reservationId/pickup", requireRole("admin"), async (req, res): Promise<void> => {
   const creator = res.locals.adminUser as AdminUser;
   const reservationId = parseOfferId(req.params.reservationId);
@@ -442,15 +534,16 @@ router.post("/marketplace/reservations/:reservationId/pickup", requireRole("admi
   const result = await withTransaction(async (client) => {
     await releaseExpired(client);
     const row = await client.query(
-      "SELECT id, offer_id, status, pickup_code_hash, pickup_expires_at FROM marketplace_reservations WHERE id = $1 AND creator_user_id = $2 FOR UPDATE",
+      "SELECT id, offer_id, status, payment_status, pickup_code_hash, pickup_expires_at FROM marketplace_reservations WHERE id = $1 AND creator_user_id = $2 FOR UPDATE",
       [reservationId, creator.id],
     );
     const reservation = row.rows[0];
     const valid = matchesPickupCode(code, reservation?.pickup_code_hash ?? "");
     if (!reservation || !canConfirmPickup(reservation.status, reservation.pickup_expires_at) || !valid) return null;
     const updated = await client.query(
-      `UPDATE marketplace_reservations SET status = 'picked_up', pickup_code_hash = '', picked_up_at = now(), updated_at = now()
-        WHERE id = $1 AND status = 'accepted' AND pickup_expires_at > now() RETURNING guest_session_hash`,
+      `UPDATE marketplace_reservations SET status = 'picked_up', pickup_code_hash = '', pickup_code_ciphertext = NULL,
+        picked_up_at = now(), updated_at = now()
+        WHERE id = $1 AND status IN ('pickup_ready', 'paid') AND payment_status IN ('paid', 'not_required') AND pickup_expires_at > now() RETURNING guest_session_hash`,
       [reservationId],
     );
     if (!updated.rows[0]) return null;
@@ -459,10 +552,31 @@ router.post("/marketplace/reservations/:reservationId/pickup", requireRole("admi
        VALUES ($1, $2, $3, $4, 'reservation_picked_up')`,
       [creator.id, updated.rows[0].guest_session_hash, reservation.offer_id, reservationId],
     );
-    return true;
+    return { reservationId };
   });
   if (!result) { res.status(409).json({ error: "Kod jest nieprawidłowy, wygasł lub został już użyty." }); return; }
-  res.json({ ok: true, status: "picked_up" });
+  const transfer = await transferMarketplaceAfterPickup(result.reservationId);
+  res.json({ ok: true, status: "picked_up", transferStatus: transfer.transferred ? "transferred" : "pending" });
+});
+
+router.post("/marketplace/reservations/:reservationId/rating", async (req, res): Promise<void> => {
+  if (!publicWriteGuard(req, res)) return;
+  const guestHash = getGuestHash(req, res, false);
+  const reservationId = parseOfferId(req.params.reservationId);
+  const vote = Number(req.body?.vote);
+  if (!guestHash || !reservationId || (vote !== 1 && vote !== -1)) { res.status(400).json({ error: "Wybierz kciuk w górę albo w dół." }); return; }
+  const result = await withTransaction(async (client) => {
+    const row = await client.query("SELECT id, creator_user_id FROM marketplace_reservations WHERE id = $1 AND guest_session_hash = $2 AND status = 'picked_up' FOR UPDATE", [reservationId, guestHash]);
+    if (!row.rows[0]) return false;
+    const inserted = await client.query(
+      `INSERT INTO marketplace_ratings (reservation_id, creator_user_id, guest_session_hash, vote)
+       VALUES ($1, $2, $3, $4) ON CONFLICT (reservation_id) DO NOTHING RETURNING id`,
+      [reservationId, row.rows[0].creator_user_id, guestHash, vote],
+    );
+    return Boolean(inserted.rows[0]);
+  });
+  if (!result) { res.status(409).json({ error: "Ta rezerwacja została już oceniona albo nie jest zakończona." }); return; }
+  res.status(201).json({ ok: true });
 });
 
 router.post("/marketplace/requests", async (req, res): Promise<void> => {
