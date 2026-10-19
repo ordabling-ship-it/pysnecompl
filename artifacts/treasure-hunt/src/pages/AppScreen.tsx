@@ -751,8 +751,14 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         setIsSheetOpen(true);
       });
     }
-    requestAnimationFrame(() => mapRef.current?.invalidateSize());
-    const resizeTimer = window.setTimeout(() => mapRef.current?.invalidateSize(), 250);
+    requestAnimationFrame(() => {
+      mapRef.current?.setView([53.4285, 14.5528], 14, { animate: false });
+      mapRef.current?.invalidateSize();
+    });
+    const resizeTimer = window.setTimeout(() => {
+      mapRef.current?.setView([53.4285, 14.5528], 14, { animate: false });
+      mapRef.current?.invalidateSize();
+    }, 250);
     return () => {
       window.clearTimeout(resizeTimer);
       tileLayerRef.current = null;

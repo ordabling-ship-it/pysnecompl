@@ -85,8 +85,14 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
     // The map is mounted after the page transition and can initially measure
     // as hidden. Recalculate its size so the first tile request is rendered
     // without requiring the visitor to enter coordinates first.
-    requestAnimationFrame(() => map.invalidateSize());
-    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 250);
+    requestAnimationFrame(() => {
+      map.setView([52, 19], 6, { animate: false });
+      map.invalidateSize();
+    });
+    const resizeTimer = window.setTimeout(() => {
+      map.setView([52, 19], 6, { animate: false });
+      map.invalidateSize();
+    }, 250);
     mapRef.current = map;
     return () => { window.clearTimeout(resizeTimer); map.remove(); mapRef.current = null; layerRef.current = null; };
   }, []);
