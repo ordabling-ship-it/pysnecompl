@@ -10,12 +10,14 @@ import pinPackagesRouter from "./pinPackages";
 import paymentsRouter from "./payments";
 import analyticsRouter from "./analytics";
 import marketplaceRouter from "./marketplace";
+import mapTilesRouter from "./mapTiles";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
 router.use(pinPackagesRouter);
+router.use(mapTilesRouter);
 // Marketplace has both public Odbiorca routes and session-protected Kreator
 // routes. Mount it before legacy routers that install a catch-all requireAdmin
 // middleware, otherwise public offer discovery and reservations would be

@@ -73,7 +73,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   useEffect(() => {
     if (!mapElement.current || mapRef.current) return;
     const map = L.map(mapElement.current, { scrollWheelZoom: false }).setView([52, 19], 6);
-    L.tileLayer("https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png", {
+    L.tileLayer("/api/map-tiles/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: "© OpenStreetMap contributors, Wikimedia Maps",
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);

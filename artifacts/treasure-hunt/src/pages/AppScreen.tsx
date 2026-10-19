@@ -763,7 +763,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     if (!mapRef.current) return;
     tileLayerRef.current?.remove();
     tileLayerRef.current = L.tileLayer(
-      "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png",
+      "/api/map-tiles/{z}/{x}/{y}.png",
       { attribution: "© OpenStreetMap contributors, Wikimedia Maps" }
     ).addTo(mapRef.current);
   }, [theme, isAdmin]);
