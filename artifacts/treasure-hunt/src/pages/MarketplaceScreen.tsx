@@ -73,8 +73,8 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   useEffect(() => {
     if (!mapElement.current || mapRef.current) return;
     const map = L.map(mapElement.current, { scrollWheelZoom: false }).setView([52, 19], 6);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19, attribution: "© OpenStreetMap © CARTO",
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "© OpenStreetMap contributors",
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     map.on("click", (event) => {
@@ -132,14 +132,33 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
     finally { setLoading(false); }
   };
 
-  const locate = () => {
+  const locate = useCallback(() => {
     if (!navigator.geolocation) { setError("Ta przeglądarka nie udostępnia lokalizacji."); return; }
+    setNotice("Pobieram Twoją lokalizację…");
     navigator.geolocation.getCurrentPosition(
-      (position) => { setLat(position.coords.latitude.toFixed(5)); setLng(position.coords.longitude.toFixed(5)); setError(null); setNotice("Lokalizacja została pobrana za Twoją zgodą. Możesz teraz wyszukać skarby w pobliżu albo dodać zapytanie dla Kreatora."); },
-      () => setError("Nie uzyskano dostępu do lokalizacji. Wybierz miejsce kliknięciem na mapie."),
+      (position) => {
+        const latitude = position.coords.latitude.toFixed(5);
+        const longitude = position.coords.longitude.toFixed(5);
+        setLat(latitude);
+        setLng(longitude);
+        mapRef.current?.setView([Number(latitude), Number(longitude)], 13);
+        setError(null);
+        setNotice("Mapa została ustawiona w Twojej bieżącej lokalizacji. Wybierz „Szukaj”, aby zobaczyć skarby w pobliżu.");
+      },
+      () => {
+        setNotice(null);
+        setError("Nie uzyskano dostępu do lokalizacji. Wybierz miejsce kliknięciem na mapie albo wpisz je ręcznie.");
+      },
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
     );
-  };
+  }, []);
+
+  // Przy pierwszym otwarciu używamy GPS jako domyślnego punktu mapy. Nie
+  // zapisujemy tej lokalizacji na serwerze; użytkownik może ją zastąpić
+  // kliknięciem na mapie lub ręcznym wpisaniem współrzędnych.
+  useEffect(() => {
+    locate();
+  }, [locate]);
 
   const reserve = async (offer: Offer) => {
     setError(null); setNotice(null);

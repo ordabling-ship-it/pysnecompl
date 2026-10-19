@@ -758,17 +758,13 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     };
   }, [isAdmin]);
 
-  // ── Tile layer: swap between light OSM and dark CartoDB whenever theme or
-  //    isAdmin changes. isAdmin is included so the layer is (re-)added after
-  //    the map is recreated when the user switches role. ──
+  // ── Public OpenStreetMap tile layer. It does not require a provider API key. ──
   useEffect(() => {
     if (!mapRef.current) return;
     tileLayerRef.current?.remove();
     tileLayerRef.current = L.tileLayer(
-      theme === "dark"
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-      { attribution: "&copy; OpenStreetMap contributors &copy; CARTO" }
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { attribution: "© OpenStreetMap contributors" }
     ).addTo(mapRef.current);
   }, [theme, isAdmin]);
 
