@@ -751,7 +751,10 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
         setIsSheetOpen(true);
       });
     }
+    requestAnimationFrame(() => mapRef.current?.invalidateSize());
+    const resizeTimer = window.setTimeout(() => mapRef.current?.invalidateSize(), 250);
     return () => {
+      window.clearTimeout(resizeTimer);
       tileLayerRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;

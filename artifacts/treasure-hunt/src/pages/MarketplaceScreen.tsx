@@ -82,8 +82,13 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
       setLng(event.latlng.lng.toFixed(5));
       setNotice("Lokalizacja wyszukiwania została ustawiona na mapie.");
     });
+    // The map is mounted after the page transition and can initially measure
+    // as hidden. Recalculate its size so the first tile request is rendered
+    // without requiring the visitor to enter coordinates first.
+    requestAnimationFrame(() => map.invalidateSize());
+    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 250);
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; layerRef.current = null; };
+    return () => { window.clearTimeout(resizeTimer); map.remove(); mapRef.current = null; layerRef.current = null; };
   }, []);
 
   useEffect(() => {
