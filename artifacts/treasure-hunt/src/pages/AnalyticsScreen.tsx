@@ -108,7 +108,7 @@ function PinMap({ rows, onBounds }: { rows: AnyRow[]; onBounds: (bounds: L.LatLn
   useEffect(() => {
     if (!node.current || map.current) return;
     const instance = L.map(node.current, { zoomControl: true, scrollWheelZoom: false }).setView([53.43, 14.55], 12);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(instance);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(instance);
     group.current = L.layerGroup().addTo(instance); map.current = instance;
     return () => { instance.remove(); map.current = null; group.current = null; };
   }, []);
