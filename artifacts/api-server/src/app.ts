@@ -10,6 +10,25 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// Preview deployments may point at the production users database so that the
+// real accounts and password hashes remain the single source of truth. They
+// must not be allowed to write production data, though. Render sets this flag
+// only on the v2 preview service; login/logout remain available for safe auth
+// and role checks.
+const previewReadOnly = process.env.PYSNE_PREVIEW_READ_ONLY === "true";
+// Express strips the mount path (`/api`) from req.path inside this middleware.
+const readOnlyAllowedPostRoutes = new Set(["/auth/admin-login", "/auth/logout"]);
+
+if (previewReadOnly) {
+  app.use("/api", (req, res, next) => {
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method) && !readOnlyAllowedPostRoutes.has(req.path)) {
+      res.status(503).json({ error: "Podgląd v2 działa w trybie tylko do odczytu." });
+      return;
+    }
+    next();
+  });
+}
+
 // Render terminates TLS at its proxy; trust its forwarded protocol so secure
 // cookies and same-origin checks use the public HTTPS origin.
 app.set("trust proxy", 1);

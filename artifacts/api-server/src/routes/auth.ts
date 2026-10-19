@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { eq, and, isNull, gt, or, inArray, sql } from "drizzle-orm";
 import { db, accountInvitesTable, auditLogsTable, usersTable, markersTable } from "@workspace/db";
 import {
@@ -26,6 +26,7 @@ const loginAttempts = new Map<string, { failures: number; windowStartedAt: numbe
 const dummyHash = hashPassword(randomBytes(32).toString("hex"));
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_BLOCK_MS = 15 * 60 * 1000;
+const previewReadOnly = process.env.PYSNE_PREVIEW_READ_ONLY === "true";
 
 function loginKey(ip: string | undefined, username: string): string {
   return `${ip ?? "unknown"}:${username.toLowerCase()}`;
@@ -101,7 +102,9 @@ router.post("/auth/admin-login", async (req, res): Promise<void> => {
   loginAttempts.delete(attemptKey);
 
   req.log.info({ userId: user.id }, "Admin logged in");
-  await recordAudit("admin_login", user.id, user.id, {});
+  if (!previewReadOnly) {
+    await recordAudit("admin_login", user.id, user.id, {});
+  }
   res.setHeader("Cache-Control", "no-store");
   setAdminSession(res, user.id);
   res.json({ id: user.id, name: user.name, role: user.role, slug: user.slug, pinBalance: user.pinBalance, firstPurchaseBonusGranted: user.firstPurchaseBonusGranted, canAccessAnalytics: hasAnalyticsAccess(user) });
@@ -153,51 +156,6 @@ router.post("/auth/activate-account", async (req, res): Promise<void> => {
   res.setHeader("Cache-Control", "no-store");
   setAdminSession(res, user.id);
   res.status(200).json(user);
-});
-
-// One-time bootstrap: enabled only when an operator has configured a secret in
-// the hosting provider. Once the master account exists, this endpoint is closed.
-router.post("/auth/bootstrap-master", async (req, res): Promise<void> => {
-  const secret = process.env.MASTER_BOOTSTRAP_SECRET;
-  const { secret: supplied, masterPassword, moderatorPassword } = req.body ?? {};
-  const expectedBytes = Buffer.from(secret ?? "");
-  const suppliedBytes = typeof supplied === "string" ? Buffer.from(supplied) : Buffer.alloc(0);
-  if (!secret || suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) {
-    res.status(404).json({ error: "Nie znaleziono." });
-    return;
-  }
-  const origin = req.get("origin");
-  if (process.env.NODE_ENV === "production" && (!origin || origin !== `${req.protocol}://${req.get("host")}`)) {
-    res.status(403).json({ error: "Żądanie pochodzi z niedozwolonego źródła." });
-    return;
-  }
-  if (typeof masterPassword !== "string" || masterPassword.length < 15 || masterPassword.length > 1024 ||
-      typeof moderatorPassword !== "string" || moderatorPassword.length < 15 || moderatorPassword.length > 1024) {
-    res.status(400).json({ error: "Oba hasła muszą mieć co najmniej 15 znaków." });
-    return;
-  }
-  const accounts = await db.transaction(async (tx) => {
-    const [existing] = await tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.role, "master_admin")).limit(1);
-    if (existing) return null;
-    const [master] = await tx.insert(usersTable).values({
-      name: "don_hudinni", slug: "don_hudinni", email: "don_hudinni@accounts.pysne.invalid",
-      passwordHash: await hashPassword(masterPassword), role: "master_admin", pinBalance: 10,
-    }).returning({ id: usersTable.id, name: usersTable.name, role: usersTable.role });
-    const [moderator] = await tx.insert(usersTable).values({
-      name: "don_lisciasty", slug: "don_lisciasty", email: "don_lisciasty@accounts.pysne.invalid",
-      passwordHash: await hashPassword(moderatorPassword), role: "moderator", parentUserId: master.id, pinBalance: 10,
-    }).returning({ id: usersTable.id, name: usersTable.name, role: usersTable.role });
-    return { master, moderator };
-  });
-  if (!accounts) {
-    res.status(409).json({ error: "Konto głównego administratora już istnieje." });
-    return;
-  }
-  res.setHeader("Cache-Control", "no-store");
-  await recordAudit("master_bootstrapped", accounts.master.id, accounts.master.id, { username: accounts.master.name });
-  await recordAudit("moderator_created", accounts.master.id, accounts.moderator.id, { username: accounts.moderator.name });
-  setAdminSession(res, accounts.master.id);
-  res.status(201).json({ ...accounts.master, slug: "don_hudinni", pinBalance: 10, canAccessAnalytics: true });
 });
 
 router.get("/auth/session", async (req, res): Promise<void> => {

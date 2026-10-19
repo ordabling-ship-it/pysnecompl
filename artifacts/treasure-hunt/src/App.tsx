@@ -255,6 +255,7 @@ function Router() {
       <Route path="/analytics" component={MainApp} />
       <Route path="/oferty" component={MainApp} />
       <Route path="/marketplace/manage" component={MainApp} />
+      <Route path="/zenek" component={MainApp} />
       <Route path="/" component={MainApp} />
       <Route component={NotFound} />
     </Switch>
