@@ -763,7 +763,7 @@ export default function AppScreen({ user, guestData, onLogout, theme, onToggleTh
     if (!mapRef.current) return;
     tileLayerRef.current?.remove();
     tileLayerRef.current = L.tileLayer(
-      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png",
       { attribution: "© OpenStreetMap contributors" }
     ).addTo(mapRef.current);
   }, [theme, isAdmin]);
