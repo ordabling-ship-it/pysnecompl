@@ -3,9 +3,9 @@ import { Router, type IRouter } from "express";
 const router: IRouter = Router();
 
 // Keep the upstream fixed so this endpoint cannot be used as an arbitrary
-// server-side request proxy. Wikimedia serves OpenStreetMap-based tiles and
-// does not require an application API key.
-const TILE_ORIGIN = "https://maps.wikimedia.org/osm-intl";
+// server-side request proxy. This OpenStreetMap mirror does not require an
+// application API key and supports the zoom levels used by the map.
+const TILE_ORIGIN = "https://tile.openstreetmap.de";
 
 router.get("/map-tiles/:z/:x/:y.png", async (req, res): Promise<void> => {
   const z = Number(req.params.z);
