@@ -19,7 +19,10 @@ type AuthScreenProps = {
 };
 
 export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggleTheme, mode = "player", activationToken = "" }: AuthScreenProps) {
-  const [view, setView] = useState<"guest" | "admin" | "marketplace">(mode === "panel" ? "admin" : "guest");
+  // The public home page is the recipient's map first. Token entry remains
+  // one click away, while the recipient can choose a search point without an
+  // account or login.
+  const [view, setView] = useState<"guest" | "admin" | "marketplace">(mode === "panel" ? "admin" : "marketplace");
   const [code, setCode] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");

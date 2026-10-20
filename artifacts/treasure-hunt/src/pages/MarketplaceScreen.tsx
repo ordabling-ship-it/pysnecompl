@@ -245,7 +245,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
         <section className="space-y-2">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-400">Lokalne oferty</p>
           <h1 className="text-2xl font-bold sm:text-3xl">Znajdź skarb w swojej okolicy</h1>
-          <p className="max-w-3xl text-sm text-gray-600 dark:text-gray-300">Wskaż na mapie miejsce poszukiwań, wybierz promień i dodaj uwagi dla Kreatora. Możesz też dobrowolnie użyć GPS. Tokeny do gier nadal wpisuje się na stronie głównej.</p>
+          <p className="max-w-3xl text-sm text-gray-600 dark:text-gray-300">Odbiorca nie potrzebuje konta ani logowania. Wskaż na mapie miejsce poszukiwań, wybierz promień i dodaj uwagi dla Kreatora. Możesz też dobrowolnie użyć GPS. Token wpiszesz po wybraniu miejsca.</p>
         </section>
 
         <section className="grid gap-4 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:grid-cols-[1fr_auto_auto] md:items-end">
