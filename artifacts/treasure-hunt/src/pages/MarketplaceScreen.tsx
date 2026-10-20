@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Navigation, Search, Send, TicketCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 type Offer = {
@@ -23,6 +22,8 @@ type SearchRequest = { id: number; category: string | null; description: string;
 
 const money = (cents: number) => `${(cents / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
 const time = (value: string | null) => value ? new Date(value).toLocaleString("pl-PL", { dateStyle: "medium", timeStyle: "short" }) : "Do uzgodnienia";
+const SZCZECIN = { lat: 53.4285, lng: 14.5528 };
+const RECIPIENT_RADIUS_OPTIONS = [0.5, 1, 2, 5] as const;
 function safeImageUrl(value: string | null): string | null {
   if (!value) return null;
   if (/^data:image\/jpeg;base64,[A-Za-z0-9+/]*={0,2}$/.test(value)) return value;
@@ -44,6 +45,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const selectionMarkerRef = useRef<L.CircleMarker | null>(null);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [radiusKm, setRadiusKm] = useState("0.5");
@@ -54,10 +56,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
-  const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
-  const [budget, setBudget] = useState("");
-  const [neededBy, setNeededBy] = useState("");
 
   const loadVisitorData = useCallback(async () => {
     try {
@@ -72,29 +71,33 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
 
   useEffect(() => {
     if (!mapElement.current || mapRef.current) return;
-    const map = L.map(mapElement.current, { scrollWheelZoom: false }).setView([52, 19], 6);
+    const map = L.map(mapElement.current, { scrollWheelZoom: false }).setView([SZCZECIN.lat, SZCZECIN.lng], 13);
     L.tileLayer("/api/map-tiles/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: "© OpenStreetMap contributors",
     }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     map.on("click", (event) => {
-      setLat(event.latlng.lat.toFixed(5));
-      setLng(event.latlng.lng.toFixed(5));
+      const latitude = event.latlng.lat.toFixed(5);
+      const longitude = event.latlng.lng.toFixed(5);
+      setLat(latitude);
+      setLng(longitude);
+      selectionMarkerRef.current?.remove();
+      selectionMarkerRef.current = L.circleMarker(event.latlng, { radius: 9, color: "#166534", fillColor: "#22c55e", fillOpacity: 0.9, weight: 3 }).addTo(map);
       setNotice("Lokalizacja wyszukiwania została ustawiona na mapie.");
     });
     // The map is mounted after the page transition and can initially measure
     // as hidden. Recalculate its size so the first tile request is rendered
     // without requiring the visitor to enter coordinates first.
     requestAnimationFrame(() => {
-      map.setView([52, 19], 6, { animate: false });
+      map.setView([SZCZECIN.lat, SZCZECIN.lng], 13, { animate: false });
       map.invalidateSize();
     });
     const resizeTimer = window.setTimeout(() => {
-      map.setView([52, 19], 6, { animate: false });
+      map.setView([SZCZECIN.lat, SZCZECIN.lng], 13, { animate: false });
       map.invalidateSize();
     }, 250);
     mapRef.current = map;
-    return () => { window.clearTimeout(resizeTimer); map.remove(); mapRef.current = null; layerRef.current = null; };
+    return () => { window.clearTimeout(resizeTimer); selectionMarkerRef.current = null; map.remove(); mapRef.current = null; layerRef.current = null; };
   }, []);
 
   useEffect(() => {
@@ -130,7 +133,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const search = async () => {
     const latitude = Number(lat), longitude = Number(lng);
     if (!lat || !lng || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      setError("Wybierz miejsce na mapie, wpisz współrzędne albo użyj swojej lokalizacji.");
+      setError("Kliknij wybrane miejsce na mapie albo użyj przycisku lokalizacji.");
       return;
     }
     setLoading(true); setError(null); setNotice(null);
@@ -152,24 +155,21 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
         const longitude = position.coords.longitude.toFixed(5);
         setLat(latitude);
         setLng(longitude);
-        mapRef.current?.setView([Number(latitude), Number(longitude)], 13);
+        selectionMarkerRef.current?.remove();
+        if (mapRef.current) {
+          selectionMarkerRef.current = L.circleMarker([Number(latitude), Number(longitude)], { radius: 9, color: "#166534", fillColor: "#22c55e", fillOpacity: 0.9, weight: 3 }).addTo(mapRef.current);
+          mapRef.current.setView([Number(latitude), Number(longitude)], 13);
+        }
         setError(null);
         setNotice("Mapa została ustawiona w Twojej bieżącej lokalizacji. Wybierz „Szukaj”, aby zobaczyć skarby w pobliżu.");
       },
       () => {
         setNotice(null);
-        setError("Nie uzyskano dostępu do lokalizacji. Wybierz miejsce kliknięciem na mapie albo wpisz je ręcznie.");
+        setError("Nie uzyskano dostępu do lokalizacji. Wybierz miejsce kliknięciem na mapie.");
       },
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
     );
   }, []);
-
-  // Przy pierwszym otwarciu używamy GPS jako domyślnego punktu mapy. Nie
-  // zapisujemy tej lokalizacji na serwerze; użytkownik może ją zastąpić
-  // kliknięciem na mapie lub ręcznym wpisaniem współrzędnych.
-  useEffect(() => {
-    locate();
-  }, [locate]);
 
   const reserve = async (offer: Offer) => {
     setError(null); setNotice(null);
@@ -225,15 +225,15 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
     try {
       await api("/api/marketplace/requests", {
         method: "POST",
-        body: JSON.stringify({ category, description, budgetPln: budget || null, lat: Number(lat), lng: Number(lng), neededBy: neededBy || null }),
+        body: JSON.stringify({ category: null, description, budgetPln: null, lat: Number(lat), lng: Number(lng), neededBy: null }),
       });
-      setDescription(""); setBudget(""); setNeededBy(""); setRequestOpen(false);
+      setDescription(""); setRequestOpen(false);
       setNotice("Zapytanie zostało dodane. Pasujący Kreatorzy mogą wysłać propozycję.");
       await loadVisitorData();
     } catch (e) { setError(e instanceof Error ? e.message : "Nie udało się dodać zapytania."); }
   };
 
-  const canSearch = useMemo(() => Boolean(lat && lng), [lat, lng]);
+  const canSearch = Boolean(lat && lng);
 
   return (
     <main className="min-h-screen bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
@@ -245,15 +245,14 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
         <section className="space-y-2">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-400">Lokalne oferty</p>
           <h1 className="text-2xl font-bold sm:text-3xl">Znajdź skarb w swojej okolicy</h1>
-          <p className="max-w-3xl text-sm text-gray-600 dark:text-gray-300">Przeglądaj oferty bez zakładania konta. Wybierz miejsce kliknięciem na mapie, wpisz współrzędne albo pozwól przeglądarce udostępnić lokalizację. Tokeny do gier nadal wpisuje się na stronie głównej.</p>
+          <p className="max-w-3xl text-sm text-gray-600 dark:text-gray-300">Wskaż na mapie miejsce poszukiwań, wybierz promień i dodaj uwagi dla Kreatora. Możesz też dobrowolnie użyć GPS. Tokeny do gier nadal wpisuje się na stronie głównej.</p>
         </section>
 
-        <section className="grid gap-4 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
-          <label className="space-y-1 text-sm font-medium">Szerokość geograficzna<Input inputMode="decimal" value={lat} onChange={(event) => setLat(event.target.value)} placeholder="Kliknij mapę lub użyj lokalizacji" /></label>
-          <label className="space-y-1 text-sm font-medium">Długość geograficzna<Input inputMode="decimal" value={lng} onChange={(event) => setLng(event.target.value)} placeholder="np. 21.0122" /></label>
-          <label className="space-y-1 text-sm font-medium">Promień wyszukiwania<select className="h-10 w-full rounded-md border bg-background px-3" value={radiusKm} onChange={(event) => setRadiusKm(event.target.value)}>{[0.5, 1, 2, 5, 10, 20, 50].map((n) => <option key={n} value={n}>{n === 0.5 ? "500 m" : `${n} km`}</option>)}</select></label>
-          <div className="flex gap-2 md:justify-end"><Button type="button" variant="outline" onClick={locate} aria-label="Użyj mojej lokalizacji"><Navigation className="mr-2 h-4 w-4" />Moja lokalizacja</Button><Button type="button" onClick={() => void search()} disabled={loading || !canSearch}><Search className="mr-2 h-4 w-4" />Szukaj</Button></div>
-          <p className="md:col-span-4 text-xs text-gray-500 dark:text-gray-400">Wskazówka: kliknij na mapie, aby ustawić punkt wyszukiwania. Lokalizacja Odbiorcy nie jest zapisywana przy szukaniu ofert.</p>
+        <section className="grid gap-4 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:grid-cols-[1fr_auto_auto] md:items-end">
+          <label className="space-y-1 text-sm font-medium">Promień poszukiwań<select className="h-10 w-full rounded-md border bg-background px-3" value={radiusKm} onChange={(event) => setRadiusKm(event.target.value)}>{RECIPIENT_RADIUS_OPTIONS.map((n) => <option key={n} value={n}>{n === 0.5 ? "500 m" : `${n} km`}</option>)}</select></label>
+          <Button type="button" variant="outline" onClick={locate} aria-label="Użyj mojej lokalizacji"><Navigation className="mr-2 h-4 w-4" />Użyj GPS</Button>
+          <Button type="button" onClick={() => void search()} disabled={loading || !canSearch}><Search className="mr-2 h-4 w-4" />Szukaj skarbów</Button>
+          <p className="md:col-span-3 text-xs text-gray-500 dark:text-gray-400">Mapa otwiera się domyślnie na Szczecinie. Kliknij punkt na mapie, aby wybrać miejsce poszukiwań. GPS jest opcjonalny.</p>
         </section>
 
         {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
@@ -293,10 +292,8 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
           <div className="space-y-3 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Wybierz miejsce poszukiwań</h2><p className="text-sm text-gray-600 dark:text-gray-300">Wskaż punkt na mapie. Kreator może przygotować skarb w promieniu 500 m, a płatność nastąpi przed rozpoczęciem gry.</p></div><Button type="button" variant="outline" onClick={() => setRequestOpen((open) => !open)}>{requestOpen ? "Zamknij" : "Dodaj zapytanie"}</Button></div>
             {requestOpen && <form onSubmit={sendRequest} className="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-gray-800">
-              <label className="block space-y-1 text-sm font-medium">Czego szukasz?<Textarea required minLength={10} maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Opisz skarb lub usługę" /></label>
-              <div className="grid gap-3 sm:grid-cols-2"><label className="space-y-1 text-sm font-medium">Kategoria<Input maxLength={50} value={category} onChange={(event) => setCategory(event.target.value)} placeholder="np. jedzenie, warsztat" /></label><label className="space-y-1 text-sm font-medium">Budżet (zł)<Input type="number" min="0" step="0.01" value={budget} onChange={(event) => setBudget(event.target.value)} placeholder="opcjonalnie" /></label></div>
-              <label className="block space-y-1 text-sm font-medium">Potrzebuję do<Input type="datetime-local" value={neededBy} onChange={(event) => setNeededBy(event.target.value)} /></label>
-              <p className="text-xs text-gray-500">Kreator może umieścić skarb maksymalnie 500 m od wybranego punktu. Dokładna lokalizacja nie jest pokazywana przed płatnością.</p>
+              <label className="block space-y-1 text-sm font-medium">Uwagi dla Kreatora<Textarea required minLength={10} maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Np. szukamy rodzinnej zabawy na świeżym powietrzu…" /></label>
+              <p className="text-xs text-gray-500">Kreator może umieścić skarb maksymalnie w wybranym promieniu od punktu na mapie. Dokładna lokalizacja nie jest pokazywana przed płatnością.</p>
               <Button type="submit" disabled={!canSearch || description.trim().length < 10}><Send className="mr-2 h-4 w-4" />Wyślij zapytanie</Button>
             </form>}
             {requests.map((request) => <div key={request.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700"><p className="text-sm font-medium">{request.description}</p><p className="text-xs text-gray-500">Status: {request.status} · Promień 500 m{request.budgetCents != null ? ` · Budżet ${money(request.budgetCents)}` : ""}</p>{request.proposals.map((proposal) => <div key={proposal.id} className="rounded-lg bg-green-50 p-3 text-sm dark:bg-green-950/30"><strong>{proposal.creatorName}: {proposal.offerTitle}</strong><p>{proposal.message}</p><p className="font-semibold">{money(proposal.priceCents)}</p>{proposal.reservationId ? <p className="text-xs text-gray-600">Rezerwacja: {proposal.reservationStatus === "pickup_ready" ? "opłacona — kod jest dostępny poniżej" : proposal.reservationStatus}</p> : <><p className="text-xs text-gray-500">Kreator umieścił skarb w promieniu 500 m od Twojego punktu.</p><Button size="sm" onClick={() => void acceptProposal(request, proposal)}>{proposal.priceCents > 0 ? "Przyjmij i zapłać" : "Przyjmij propozycję"}</Button></>}</div>)}</div>)}
