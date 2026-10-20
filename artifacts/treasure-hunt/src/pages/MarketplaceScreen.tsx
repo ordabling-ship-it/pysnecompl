@@ -55,7 +55,9 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [requestOpen, setRequestOpen] = useState(false);
+  // The recipient's only input fields are visible on the public home page:
+  // map point, search radius and optional notes.
+  const [requestOpen, setRequestOpen] = useState(true);
   const [description, setDescription] = useState("");
 
   const loadVisitorData = useCallback(async () => {
