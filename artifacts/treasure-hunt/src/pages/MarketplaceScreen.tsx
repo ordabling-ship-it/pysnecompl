@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { MapPin, Navigation, Search, Send, TicketCheck, X } from "lucide-react";
+import { Navigation, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -250,47 +250,20 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
           <p className="max-w-3xl text-sm text-gray-600 dark:text-gray-300">Odbiorca nie potrzebuje konta ani logowania. Wskaż na mapie miejsce poszukiwań, wybierz promień i dodaj uwagi dla Kreatora. Możesz też dobrowolnie użyć GPS. Token wpiszesz po wybraniu miejsca.</p>
         </section>
 
-        <section className="grid gap-4 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:grid-cols-[1fr_auto_auto] md:items-end">
+        <section className="grid gap-4 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:grid-cols-[1fr_auto] md:items-end">
           <label className="space-y-1 text-sm font-medium">Promień poszukiwań<select className="h-10 w-full rounded-md border bg-background px-3" value={radiusKm} onChange={(event) => setRadiusKm(event.target.value)}>{RECIPIENT_RADIUS_OPTIONS.map((n) => <option key={n} value={n}>{n === 0.5 ? "500 m" : `${n} km`}</option>)}</select></label>
           <Button type="button" variant="outline" onClick={locate} aria-label="Użyj mojej lokalizacji"><Navigation className="mr-2 h-4 w-4" />Użyj GPS</Button>
-          <Button type="button" onClick={() => void search()} disabled={loading || !canSearch}><Search className="mr-2 h-4 w-4" />Szukaj skarbów</Button>
-          <p className="md:col-span-3 text-xs text-gray-500 dark:text-gray-400">Mapa otwiera się domyślnie na Szczecinie. Kliknij punkt na mapie, aby wybrać miejsce poszukiwań. GPS jest opcjonalny.</p>
+          <p className="md:col-span-2 text-xs text-gray-500 dark:text-gray-400">Mapa otwiera się domyślnie na Szczecinie. Kliknij punkt na mapie, aby wybrać miejsce poszukiwań. GPS jest opcjonalny.</p>
         </section>
 
         {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
         {notice && <p role="status" className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200">{notice}</p>}
 
-        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-6">
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Mapa ofert</h2>
-            <div ref={mapElement} className="h-[360px] overflow-hidden rounded-2xl border bg-gray-100 dark:border-gray-800" aria-label="Mapa ofert. Kliknij, aby ustawić miejsce wyszukiwania." />
+            <h2 className="text-lg font-semibold">Mapa wyboru miejsca</h2>
+            <div ref={mapElement} className="h-[360px] overflow-hidden rounded-2xl border bg-gray-100 dark:border-gray-800" aria-label="Mapa. Kliknij, aby ustawić miejsce wyszukiwania." />
           </div>
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Oferty w pobliżu</h2><span className="text-sm text-gray-500">{offers.length}</span></div>
-            {offers.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">Ustaw miejsce i promień, a następnie wybierz „Szukaj”.</p> : <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
-              {offers.map((offer) => <article key={offer.id} className="space-y-3 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-                <div className="flex gap-3">{safeImageUrl(offer.imageUrl) && <img src={safeImageUrl(offer.imageUrl) ?? undefined} alt="" className="h-20 w-20 rounded-lg object-cover" />}<div className="min-w-0 flex-1"><h3 className="font-semibold">{offer.title}</h3><p className="text-sm text-gray-600 dark:text-gray-300">{offer.description}</p><p className="mt-1 text-xs text-gray-500">Kreator: {offer.creatorName}{offer.distanceKm != null ? ` · ${offer.distanceKm.toFixed(1)} km` : ""} · Dostępne: {offer.availableQuantity}</p><p className="text-xs text-amber-700 dark:text-amber-300">{offer.creatorBadge === "Zaufany" ? "🏆" : offer.creatorBadge === "Sprawdzony" ? "⭐" : offer.creatorBadge === "Bardzo wiarygodny" ? "🏆" : "🟢"} {offer.creatorBadge ?? "Nowy Kreator"}{(offer.creatorRatingCount ?? 0) > 0 ? ` · 👍 ${offer.creatorPositive ?? 0} · 👎 ${offer.creatorNegative ?? 0}` : ""}</p></div></div>
-                <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-lg text-green-800 dark:text-green-300">{money(offer.priceCents)}</strong><span className="text-xs text-gray-500">Odbiór: {time(offer.pickupUntil)}</span></div>
-                <p className="text-sm text-gray-700 dark:text-gray-300"><MapPin className="mr-1 inline h-4 w-4" />{offer.pickupDetails}</p>
-                <Button type="button" className="w-full" onClick={() => void reserve(offer)}><TicketCheck className="mr-2 h-4 w-4" />Chcę ten skarb</Button>
-              </article>)}
-            </div>}
-          </section>
-        </div>
-
-        <section className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-3 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Moje rezerwacje</h2><span className="text-xs text-gray-500">Odświeżane automatycznie</span></div>
-            {reservations.length === 0 ? <p className="text-sm text-gray-600 dark:text-gray-300">Po wysłaniu prośby o rezerwację jej status pojawi się tutaj w tej przeglądarce.</p> : reservations.map((reservation) => <div key={reservation.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700">
-              <div className="flex items-center justify-between gap-2"><strong>{reservation.offerTitle} · {money(reservation.priceCents)}</strong><span className="text-xs font-semibold">{reservation.status}</span></div>
-              <p className="text-xs text-gray-500">Odpowiedź do: {time(reservation.responseDeadline)}{reservation.pickupExpiresAt ? ` · Odbiór do: ${time(reservation.pickupExpiresAt)}` : ""}</p>
-              {reservation.status === "accepted" && <div className="space-y-2"><p className="text-sm">Kreator przyjął rezerwację. Opłać ją, aby otrzymać kod odbioru.</p><Button size="sm" onClick={() => void startCheckout(reservation.id)}>Zapłać przez Stripe Checkout</Button></div>}
-              {reservation.status === "pickup_ready" && <><p className="text-sm">Miejsce odbioru: {reservation.pickupDetails}</p><p className="text-sm font-semibold">Kod odbioru: {reservation.pickupCode ?? "Kod będzie dostępny po odświeżeniu."}</p></>}
-              {reservation.status === "picked_up" && <div className="rounded-lg bg-green-50 p-3 text-sm dark:bg-green-950/30"><p>Odbiór zakończony. Oceń Kreatora:</p><div className="mt-2 flex gap-2"><Button size="sm" variant="outline" onClick={() => void rateReservation(reservation.id, 1)}>👍 Dobrze</Button><Button size="sm" variant="outline" onClick={() => void rateReservation(reservation.id, -1)}>👎 Źle</Button></div></div>}
-              {(["requested", "accepted", "pickup_ready"].includes(reservation.status)) && <Button variant="outline" size="sm" onClick={() => void cancelReservation(reservation.id)}><X className="mr-2 h-4 w-4" />Anuluj rezerwację</Button>}
-            </div>)}
-          </div>
-
           <div className="space-y-3 rounded-2xl border bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Wybierz miejsce poszukiwań</h2><p className="text-sm text-gray-600 dark:text-gray-300">Wskaż punkt na mapie. Kreator może przygotować skarb w promieniu 500 m, a płatność nastąpi przed rozpoczęciem gry.</p></div><Button type="button" variant="outline" onClick={() => setRequestOpen((open) => !open)}>{requestOpen ? "Zamknij" : "Dodaj zapytanie"}</Button></div>
             {requestOpen && <form onSubmit={sendRequest} className="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-gray-800">
@@ -300,7 +273,7 @@ export default function MarketplaceScreen({ embedded = false, onBackHome }: { em
             </form>}
             {requests.map((request) => <div key={request.id} className="space-y-2 rounded-xl border p-3 dark:border-gray-700"><p className="text-sm font-medium">{request.description}</p><p className="text-xs text-gray-500">Status: {request.status} · Promień 500 m{request.budgetCents != null ? ` · Budżet ${money(request.budgetCents)}` : ""}</p>{request.proposals.map((proposal) => <div key={proposal.id} className="rounded-lg bg-green-50 p-3 text-sm dark:bg-green-950/30"><strong>{proposal.creatorName}: {proposal.offerTitle}</strong><p>{proposal.message}</p><p className="font-semibold">{money(proposal.priceCents)}</p>{proposal.reservationId ? <p className="text-xs text-gray-600">Rezerwacja: {proposal.reservationStatus === "pickup_ready" ? "opłacona — kod jest dostępny poniżej" : proposal.reservationStatus}</p> : <><p className="text-xs text-gray-500">Kreator umieścił skarb w promieniu 500 m od Twojego punktu.</p><Button size="sm" onClick={() => void acceptProposal(request, proposal)}>{proposal.priceCents > 0 ? "Przyjmij i zapłać" : "Przyjmij propozycję"}</Button></>}</div>)}</div>)}
           </div>
-        </section>
+        </div>
         <p className="text-xs text-gray-500">Płatność jest obsługiwana przez Stripe. Środki są przekazywane Kreatorowi po potwierdzeniu odbioru.</p>
       </div>
     </main>
