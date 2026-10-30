@@ -5,21 +5,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Key, User, ArrowLeft, Coins, AlertCircle, Sun, Moon } from "lucide-react";
-import { getOrCreateGuestToken, type GuestData } from "@/App";
+import { Loader2, Key, User, ArrowLeft, AlertCircle, Sun, Moon } from "lucide-react";
+import type { GuestData } from "@/App";
+import type { GameSession } from "@/pages/podchody-types";
+import { readApiError, readResponseError } from "@/lib/api-error";
 
 type AuthScreenProps = {
   onLoginAdmin: (user: { id: number; name: string; role: string; slug?: string; pinBalance?: number; canAccessAnalytics?: boolean }) => void;
   onLoginGuest: (guestData: GuestData) => void;
+  onJoinGame?: (session: GameSession) => void;
   mode?: "player" | "panel" | "activate";
   activationToken?: string;
   theme: "light" | "dark";
   onToggleTheme: () => void;
 };
 
-export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggleTheme, mode = "player", activationToken = "" }: AuthScreenProps) {
-  const [view, setView] = useState<"guest" | "admin">(mode === "panel" ? "admin" : "guest");
+export default function AuthScreen({ onLoginAdmin, onLoginGuest, onJoinGame, theme, onToggleTheme, mode = "player", activationToken = "" }: AuthScreenProps) {
+  const [view, setView] = useState<"game" | "treasure" | "admin">(mode === "panel" ? "admin" : "game");
   const [code, setCode] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinBusy, setJoinBusy] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -35,19 +42,42 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
   const handleGuestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!code) return;
-    const guestToken = getOrCreateGuestToken();
     guestLogin.mutate(
-      { data: { code: code.toUpperCase(), guestToken } },
+      { data: { code: code.toUpperCase() } },
       {
         onSuccess: (data) => {
           onLoginGuest(data);
-          toast({ title: "Skarb odkryty!", description: `Znalazłeś: ${data.markerTitle}` });
+          toast({ title: "Kod przyjęty", description: `Na mapie jest miejsce skarbu „${data.markerTitle}”. Teraz go znajdź.` });
         },
-        onError: () => {
-          toast({ variant: "destructive", title: "Błąd", description: "Nieprawidłowy kod skarbu." });
+        onError: (error) => {
+          toast({ variant: "destructive", title: "Błąd", description: readApiError(error, "Nieprawidłowy kod skarbu.") });
         },
       }
     );
+  };
+
+  const handleJoinSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setJoinError(null);
+    setJoinBusy(true);
+    try {
+      const response = await fetch("/api/games/join", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ code: code.toUpperCase(), nickname, teamName: teamName.trim() || null }),
+      });
+      if (!response.ok) {
+        setJoinError(await readResponseError(response, "Nie udało się dołączyć do gry."));
+        return;
+      }
+      const session = await response.json() as GameSession;
+      onJoinGame?.(session);
+    } catch {
+      setJoinError("Nie udało się dołączyć do gry.");
+    } finally {
+      setJoinBusy(false);
+    }
   };
 
   const handleAdminSubmit = (e: React.FormEvent) => {
@@ -60,8 +90,8 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
         onSuccess: (data) => {
           onLoginAdmin(data);
         },
-        onError: () => {
-          setLoginError("Nieprawidłowa nazwa użytkownika lub hasło.");
+        onError: (error) => {
+          setLoginError(readApiError(error, "Nieprawidłowa nazwa użytkownika lub hasło."));
         },
       }
     );
@@ -128,7 +158,33 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
       </button>
 
       <Card className="w-full max-w-md shadow-2xl border-none bg-white dark:bg-gray-900 dark:border dark:border-gray-700 dark:text-gray-100">
-        {view === "guest" ? (
+        {view === "game" ? (
+          <>
+            <CardHeader className="space-y-2 text-center">
+              <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-amber-100 shadow-lg ring-2 ring-amber-200 dark:bg-amber-900/40 dark:ring-amber-700">
+                <img src="/logo.png" alt="Pysne.com.pl" className="h-16 w-16 select-none object-contain" draggable={false} />
+              </div>
+              <CardTitle className="text-3xl font-bold text-green-950 dark:text-green-300">Pysne.com.pl</CardTitle>
+              <CardDescription className="text-lg text-green-800 dark:text-green-400">Dołącz do gry</CardDescription>
+            </CardHeader>
+            <form onSubmit={handleJoinSubmit}>
+              <CardContent className="space-y-3">
+                <Input aria-label="Kod gry" placeholder="KOD GRY" className="h-14 text-center text-2xl uppercase tracking-widest" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} maxLength={5} disabled={joinBusy} />
+                <Input aria-label="Nazwa gracza" placeholder="Twoja nazwa" value={nickname} onChange={(event) => setNickname(event.target.value)} maxLength={24} disabled={joinBusy} required />
+                <Input aria-label="Nazwa zespołu" placeholder="Zespół (opcjonalnie)" value={teamName} onChange={(event) => setTeamName(event.target.value)} maxLength={32} disabled={joinBusy} />
+                {joinError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{joinError}</p>}
+              </CardContent>
+              <CardFooter className="flex flex-col space-y-3">
+                <Button type="submit" className="h-14 w-full bg-amber-500 text-lg text-white hover:bg-amber-600" disabled={joinBusy || code.trim().length !== 5 || nickname.trim().length < 2}>
+                  {joinBusy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Key className="mr-2 h-5 w-5" />}
+                  Dołącz do gry
+                </Button>
+                <button type="button" className="text-sm font-medium text-green-800 underline underline-offset-4 dark:text-green-300" onClick={() => { setView("treasure"); setJoinError(null); }}>Mam kod skarbu</button>
+                <a href="/panel" className="text-sm font-medium text-green-800 underline underline-offset-4 dark:text-green-300">Jestem organizatorem</a>
+              </CardFooter>
+            </form>
+          </>
+        ) : view === "treasure" ? (
           <>
             <CardHeader className="text-center space-y-2">
               <div className="mx-auto w-24 h-24 bg-amber-100 dark:bg-amber-900/40 rounded-full flex items-center justify-center mb-4 shadow-lg ring-2 ring-amber-200 dark:ring-amber-700">
@@ -152,11 +208,11 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                       className="text-center text-2xl uppercase tracking-widest h-14 border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-amber-500"
                       value={code}
                       onChange={(e) => setCode(e.target.value)}
-                      maxLength={6}
+                      maxLength={5}
                       disabled={guestLogin.isPending}
                     />
                     <p className="px-1 text-center text-xs leading-relaxed text-green-800/80 dark:text-green-300/80">
-                      Wpisz kod znaleziony przy skarbie, aby odkryć wskazówkę i rozpocząć zabawę.
+                      Wpisz kod znaleziony przy skarbie, aby zobaczyć wskazówkę i miejsce na mapie.
                     </p>
                   </div>
                 </div>
@@ -168,9 +224,10 @@ export default function AuthScreen({ onLoginAdmin, onLoginGuest, theme, onToggle
                   disabled={guestLogin.isPending || !code}
                 >
                   {guestLogin.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Key className="w-5 h-5 mr-2" />}
-                  Odkryj skarb
+                  Pokaż miejsce
                 </Button>
-                <a href="/panel" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">Panel Kreatora i opiekuna</a>
+                <button type="button" className="text-sm font-medium text-green-800 underline underline-offset-4 dark:text-green-300" onClick={() => setView("game")}>Dołącz do gry</button>
+                <a href="/panel" className="text-sm font-medium text-green-800 underline underline-offset-4 hover:text-green-950 dark:text-green-300 dark:hover:text-green-100">Jestem organizatorem</a>
               </CardFooter>
             </form>
           </>

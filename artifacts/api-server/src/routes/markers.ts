@@ -1,39 +1,20 @@
 import { Router, type IRouter } from "express";
-import { randomInt } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, markersTable, redemptionsTable, usersTable } from "@workspace/db";
 import { getRoleCapabilities } from "@workspace/api-zod";
 import { requireAdmin, type AdminUser } from "../lib/admin-session";
 import { recordAudit } from "../lib/audit";
+import { genCode } from "../lib/codes";
+import { isAllowedImageUrl } from "../lib/images";
 import {
   CreateMarkerBody,
   GetMarkerParams,
   DeleteMarkerParams,
-  GetMarkerByCodeParams,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
-const MAX_IMAGE_URL_LENGTH = 1_500_000;
-
-function isAllowedImageUrl(value: string): boolean {
-  if (value.length > MAX_IMAGE_URL_LENGTH) return false;
-  if (/^data:image\/jpeg;base64,[A-Za-z0-9+/]*={0,2}$/.test(value)) return true;
-
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
-
-function genCode(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from({ length: 5 }, () => alphabet[randomInt(alphabet.length)]).join("");
-}
-
-function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, count: number) {
+function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, count: number, includeImage: boolean) {
   return {
     id: marker.id,
     title: marker.title,
@@ -42,7 +23,8 @@ function markerWithRedemptionCount(marker: typeof markersTable.$inferSelect, cou
     code: marker.code,
     lat: marker.lat,
     lng: marker.lng,
-    imageUrl: marker.imageUrl ?? null,
+    imageUrl: includeImage ? (marker.imageUrl ?? null) : null,
+    hasImage: Boolean(marker.imageUrl),
     createdAt: marker.createdAt.toISOString(),
     // Null until the first guest enters the code (then it's NOW + 60min).
     expiresAt: marker.expiresAt ? marker.expiresAt.toISOString() : null,
@@ -66,12 +48,14 @@ router.get("/markers", requireAdmin, async (req, res): Promise<void> => {
       count: sql<number>`count(*)::int`,
     })
     .from(redemptionsTable)
+    .innerJoin(markersTable, eq(redemptionsTable.markerId, markersTable.id))
+    .where(and(eq(markersTable.ownerUserId, admin.id), isNull(markersTable.archivedAt)))
     .groupBy(redemptionsTable.markerId);
 
   const countMap = new Map(counts.map((c) => [c.markerId, c.count]));
 
   res.json(
-    markers.map((m) => markerWithRedemptionCount(m, countMap.get(m.id) ?? 0))
+    markers.map((m) => markerWithRedemptionCount(m, countMap.get(m.id) ?? 0, false))
   );
 });
 
@@ -127,41 +111,7 @@ router.post("/markers", requireAdmin, async (req, res): Promise<void> => {
 
   req.log.info({ markerId: marker.id, ownerUserId: admin.id }, "Marker created");
   await recordAudit("marker_created", admin.id, admin.id, { markerId: marker.id, title: marker.title, category });
-  res.status(201).json(markerWithRedemptionCount(marker, 0));
-});
-
-router.get("/markers/by-code/:code", async (req, res): Promise<void> => {
-  const params = GetMarkerByCodeParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
-
-  const [marker] = await db
-    .select()
-    .from(markersTable)
-    .where(and(
-      eq(markersTable.code, params.data.code.toUpperCase()),
-      isNull(markersTable.archivedAt),
-    ));
-
-  if (!marker) {
-    res.status(404).json({ error: "Marker not found" });
-    return;
-  }
-
-  // expiresAt is null until first discovery; treat null as "not yet expired".
-  if (marker.expiresAt && new Date() > new Date(marker.expiresAt)) {
-    res.status(404).json({ error: "Marker expired" });
-    return;
-  }
-
-  const [countRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(redemptionsTable)
-    .where(eq(redemptionsTable.markerId, marker.id));
-
-  res.json(markerWithRedemptionCount(marker, countRow?.count ?? 0));
+  res.status(201).json(markerWithRedemptionCount(marker, 0, true));
 });
 
 router.get("/markers/:id", requireAdmin, async (req, res): Promise<void> => {
@@ -186,7 +136,7 @@ router.get("/markers/:id", requireAdmin, async (req, res): Promise<void> => {
     .from(redemptionsTable)
     .where(eq(redemptionsTable.markerId, marker.id));
 
-  res.json(markerWithRedemptionCount(marker, countRow?.count ?? 0));
+  res.json(markerWithRedemptionCount(marker, countRow?.count ?? 0, true));
 });
 
 router.delete("/markers/:id", requireAdmin, async (req, res): Promise<void> => {

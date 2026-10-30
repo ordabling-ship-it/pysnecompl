@@ -68,6 +68,9 @@ test("later purchases do not receive the first-purchase bonus", async () => {
 test("public pricing page lists only the four one-time creator packages", async () => {
   const page = await readFile(new URL("../../treasure-hunt/public/cennik.html", import.meta.url), "utf8");
   const appScreen = await readFile(new URL("../../treasure-hunt/src/pages/AppScreen.tsx", import.meta.url), "utf8");
+  const dashboard = await readFile(new URL("../../treasure-hunt/src/pages/CreatorDashboard.tsx", import.meta.url), "utf8");
+  const packagesDialog = await readFile(new URL("../../treasure-hunt/src/pages/PinPackagesDialog.tsx", import.meta.url), "utf8");
+  const creatorUi = `${appScreen}\n${dashboard}\n${packagesDialog}`;
   const authScreen = await readFile(new URL("../../treasure-hunt/src/pages/AuthScreen.tsx", import.meta.url), "utf8");
   const app = await readFile(new URL("../../treasure-hunt/src/App.tsx", import.meta.url), "utf8");
   const paymentRoute = await readFile(new URL("../src/routes/payments.ts", import.meta.url), "utf8");
@@ -83,11 +86,12 @@ test("public pricing page lists only the four one-time creator packages", async 
   assert.match(page, /grid-template-columns:repeat\(4,1fr\)/);
   assert.match(page, /@media\(max-width:850px\)\{\.packs\{grid-template-columns:repeat\(2,1fr\)\}/);
   assert.match(page, /@media\(max-width:650px\)[\s\S]*?\.packs\{grid-template-columns:1fr/);
-  assert.match(appScreen, /const isCreator = user\?\.role === "admin"/);
-  assert.match(appScreen, /user && !layoutPreview && \(hasUnlimitedPins \|\| isCreator\)/, "only creators and unlimited-pin managers see their balance panel");
-  assert.match(appScreen, /CREATOR_PIN_PACKAGES\.map/);
-  assert.match(appScreen, /user\?\.canAccessAnalytics/, "only accounts granted analytics access by the server see the analytics link");
-  assert.doesNotMatch(appScreen, /BuyCoffee|buycoffee|pin-topups/);
+  assert.match(creatorUi, /const isCreator = user\?\.role === "admin"/);
+  assert.match(dashboard, /user && !layoutPreview && \(hasUnlimitedPins \|\| isCreator\)/, "only creators and unlimited-pin managers see their balance panel");
+  assert.match(packagesDialog, /CREATOR_PIN_PACKAGES\.map/);
+  assert.doesNotMatch(dashboard, /CREATOR_PIN_PACKAGES\.map/, "pin packages stay in one dialog");
+  assert.match(creatorUi, /user\?\.canAccessAnalytics/, "only accounts granted analytics access by the server see the analytics link");
+  assert.doesNotMatch(creatorUi, /BuyCoffee|buycoffee|pin-topups/);
   assert.match(app, /routeMode === "analytics" && user/);
   assert.match(app, /!user\.canAccessAnalytics/);
   assert.match(app, /<Route path="\/analytics" component=\{MainApp\} \/>/, "the client router must render the analytics route");

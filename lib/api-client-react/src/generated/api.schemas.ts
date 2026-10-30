@@ -20,8 +20,6 @@ export interface AdminLoginBody {
 
 export interface GuestLoginBody {
   code: string;
-  /** Optional, legacy browser identifier. Server no longer uses it for timer logic (the marker timer is shared across all guests once activated). */
-  guestToken?: string;
 }
 
 export interface AuthResponse {
@@ -56,8 +54,12 @@ export interface Marker {
   lng: number;
   /** @nullable */
   category?: string | null;
-  /** @nullable */
+  /**
+   * Null in the marker list. The single-marker response includes the photo when one was saved.
+   * @nullable
+   */
   imageUrl: string | null;
+  hasImage: boolean;
   createdAt: string;
   /**
    * ISO timestamp when the code expires. Null = timer not started yet.
@@ -91,30 +93,137 @@ export interface Redemption {
   redeemedAt: string;
 }
 
-export interface CreateRedemptionBody {
-  userId: number;
-  code: string;
-}
-
-export type DiscoveriesRecentItem = {
-  code: string;
-  activatedAt: string;
-};
-
-export interface Discoveries {
-  /** Number of marker activations since the last reset */
-  count: number;
-  /** ISO timestamp of the last counter reset (defaults to first server start) */
-  lastResetAt: string;
-  /** 5 most recent activations since the last reset, newest first */
-  recent: DiscoveriesRecentItem[];
-}
-
 export interface Stats {
   totalMarkers: number;
   activeMarkers: number;
   expiredMarkers: number;
   totalRedemptions: number;
+}
+
+export interface GameSummary {
+  id: number;
+  title: string;
+  description: string;
+  joinCode: string;
+  createdAt: string;
+  checkpointCount: number;
+  playerCount: number;
+  finishedCount: number;
+  organizerScore: number;
+}
+
+export type PublishedGame = GameSummary & {
+  charged: boolean;
+  pinBalance: number;
+};
+
+export type CreateGameBodyCheckpointsItem = {
+  hint: string;
+  answerCode: string;
+  lat: number;
+  lng: number;
+  /** @nullable */
+  imageUrl?: string | null;
+};
+
+export interface CreateGameBody {
+  title: string;
+  description: string;
+  checkpoints: CreateGameBodyCheckpointsItem[];
+}
+
+export interface JoinGameBody {
+  code: string;
+  nickname: string;
+  /** @nullable */
+  teamName?: string | null;
+}
+
+export interface CheckpointAttemptBody {
+  gameId: number;
+  answer: string;
+}
+
+export type GameRatingBodyValue =
+  (typeof GameRatingBodyValue)[keyof typeof GameRatingBodyValue];
+
+export const GameRatingBodyValue = {
+  NUMBER_1: 1,
+  NUMBER_MINUS_1: -1,
+} as const;
+
+export interface GameRatingBody {
+  gameId: number;
+  value: GameRatingBodyValue;
+}
+
+export interface GameArea {
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+}
+
+export interface GameCheckpointView {
+  position: number;
+  hint: string;
+  /** @nullable */
+  imageUrl: string | null;
+  area: GameArea;
+}
+
+export interface GameRankingEntry {
+  place: number;
+  nickname: string;
+  /** @nullable */
+  teamName: string | null;
+  solvedCount: number;
+  finished: boolean;
+  /** @nullable */
+  durationMs: number | null;
+}
+
+export interface GameSession {
+  gameId: number;
+  title: string;
+  description: string;
+  nickname: string;
+  /** @nullable */
+  teamName: string | null;
+  organizerName: string;
+  organizerScore: number;
+  joinedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+  /** @nullable */
+  durationMs: number | null;
+  finished: boolean;
+  solvedCount: number;
+  total: number;
+  current: GameCheckpointView | null;
+  ranking: GameRankingEntry[];
+  /** @nullable */
+  myRating: number | null;
+}
+
+export type OrganizerGameCheckpointsItem = {
+  id: number;
+  position: number;
+  hint: string;
+  lat: number;
+  lng: number;
+  answerCode: string;
+  hasImage: boolean;
+};
+
+export interface OrganizerGame {
+  id: number;
+  title: string;
+  description: string;
+  joinCode: string;
+  createdAt: string;
+  organizerScore: number;
+  checkpoints: OrganizerGameCheckpointsItem[];
+  ranking: GameRankingEntry[];
 }
 
 export type CreatePinCheckoutSessionBodyPackageId =
@@ -156,6 +265,6 @@ export type ListRedemptionsParams = {
   userId?: number;
 };
 
-export type ResetDiscoveries200 = {
-  lastResetAt: string;
+export type GetGameSessionParams = {
+  gameId?: number;
 };

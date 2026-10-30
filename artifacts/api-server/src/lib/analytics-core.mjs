@@ -1,9 +1,6 @@
 export function hasAnalyticsAccess(user) {
   if (!user) return false;
-  if (user.role === "master_admin") return true;
-  return user.role === "moderator" &&
-    typeof user.slug === "string" &&
-    user.slug.toLowerCase() === "don_lisciasty";
+  return user.role === "master_admin" || user.role === "moderator";
 }
 
 export function analyticsAccessStatus(user) {

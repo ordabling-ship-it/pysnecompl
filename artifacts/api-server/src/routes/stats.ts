@@ -4,9 +4,8 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { requireAdmin, type AdminUser } from "../lib/admin-session";
 
 const router: IRouter = Router();
-router.use(requireAdmin);
 
-router.get("/stats", async (_req, res): Promise<void> => {
+router.get("/stats", requireAdmin, async (_req, res): Promise<void> => {
   const admin = res.locals.adminUser as AdminUser;
   const [markerStats] = await db
     .select({

@@ -121,6 +121,58 @@ export async function prepareDatabase(): Promise<void> {
       LIMIT 1`,
   );
 
+  await pool.query(`CREATE TABLE IF NOT EXISTS games (
+    id serial PRIMARY KEY,
+    owner_user_id integer NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    title text NOT NULL,
+    description text NOT NULL,
+    join_code text NOT NULL UNIQUE,
+    status text NOT NULL DEFAULT 'published',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    published_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS game_checkpoints (
+    id serial PRIMARY KEY,
+    game_id integer NOT NULL REFERENCES games(id) ON DELETE RESTRICT,
+    position integer NOT NULL,
+    hint text NOT NULL,
+    lat double precision NOT NULL,
+    lng double precision NOT NULL,
+    answer_code text NOT NULL,
+    image_url text
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS game_players (
+    id serial PRIMARY KEY,
+    game_id integer NOT NULL REFERENCES games(id) ON DELETE RESTRICT,
+    nickname text NOT NULL,
+    team_name text,
+    guest_hash text NOT NULL,
+    joined_at timestamptz NOT NULL DEFAULT now(),
+    last_seen_at timestamptz NOT NULL DEFAULT now(),
+    finished_at timestamptz
+  )`);
+  await pool.query("ALTER TABLE game_players ADD COLUMN IF NOT EXISTS last_seen_at timestamptz NOT NULL DEFAULT now()");
+  await pool.query(`CREATE TABLE IF NOT EXISTS game_progress (
+    id serial PRIMARY KEY,
+    player_id integer NOT NULL REFERENCES game_players(id) ON DELETE RESTRICT,
+    checkpoint_id integer NOT NULL REFERENCES game_checkpoints(id) ON DELETE RESTRICT,
+    solved_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS game_ratings (
+    id serial PRIMARY KEY,
+    game_id integer NOT NULL REFERENCES games(id) ON DELETE RESTRICT,
+    player_id integer NOT NULL REFERENCES game_players(id) ON DELETE RESTRICT,
+    value integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS game_checkpoints_game_position_unique ON game_checkpoints (game_id, position)");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS game_players_game_guest_unique ON game_players (game_id, guest_hash)");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS game_progress_player_checkpoint_unique ON game_progress (player_id, checkpoint_id)");
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS game_ratings_player_unique ON game_ratings (player_id)");
+  await pool.query("CREATE INDEX IF NOT EXISTS games_owner_created_idx ON games (owner_user_id, created_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS game_players_guest_seen_idx ON game_players (guest_hash, last_seen_at DESC)");
+  await pool.query("CREATE INDEX IF NOT EXISTS game_ratings_game_idx ON game_ratings (game_id)");
+
   if (duplicateRedemptions.rowCount === 0) {
     await pool.query(
       "CREATE UNIQUE INDEX IF NOT EXISTS redemptions_user_marker_unique ON redemptions (user_id, marker_id)",

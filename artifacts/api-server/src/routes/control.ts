@@ -41,16 +41,21 @@ router.get("/control/users", requireRole(...MANAGER_ROLES), async (_req, res): P
       : or(eq(usersTable.id, actor.id), eq(usersTable.parentUserId, actor.id)),
   ).orderBy(usersTable.createdAt);
 
-  const rows = await Promise.all(users.map(async (user) => {
-    const [activity] = await db.select({
-      maps: sql<number>`count(distinct ${markersTable.id})::int`,
-      activations: sql<number>`count(distinct ${markersTable.id}) filter (where ${markersTable.activatedAt} IS NOT NULL)::int`,
-      redemptions: sql<number>`count(distinct ${redemptionsTable.id})::int`,
-    }).from(markersTable)
-      .leftJoin(redemptionsTable, eq(redemptionsTable.markerId, markersTable.id))
-      .where(eq(markersTable.ownerUserId, user.id));
+  const userIds = users.map((user) => user.id);
+  const activityRows = userIds.length === 0 ? [] : await db.select({
+    ownerUserId: markersTable.ownerUserId,
+    maps: sql<number>`count(distinct ${markersTable.id})::int`,
+    activations: sql<number>`count(distinct ${markersTable.id}) filter (where ${markersTable.activatedAt} IS NOT NULL)::int`,
+    redemptions: sql<number>`count(distinct ${redemptionsTable.id})::int`,
+  }).from(markersTable)
+    .leftJoin(redemptionsTable, eq(redemptionsTable.markerId, markersTable.id))
+    .where(inArray(markersTable.ownerUserId, userIds))
+    .groupBy(markersTable.ownerUserId);
+  const activityByUser = new Map(activityRows.map((row) => [row.ownerUserId, row]));
+  const rows = users.map((user) => {
+    const activity = activityByUser.get(user.id);
     return { ...user, createdAt: user.createdAt.toISOString(), totalPins: activity?.maps ?? 0, discoveries: activity?.activations ?? 0, redemptions: activity?.redemptions ?? 0 };
-  }));
+  });
   res.setHeader("Cache-Control", "no-store");
   res.json(rows);
 });
