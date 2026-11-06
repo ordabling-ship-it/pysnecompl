@@ -9,9 +9,6 @@ services:
     buildCommand: pnpm install --frozen-lockfile && pnpm run build:production
     startCommand: bash ./scripts/start-pysne.sh
     healthCheckPath: /api/healthz
-    domains:
-      - pysne.com.pl
-      - www.pysne.com.pl
     envVars:
       - key: NODE_VERSION
         value: "24"
