@@ -3,23 +3,37 @@ services:
     name: pysnecompl
     runtime: node
     plan: free
+    region: frankfurt
     branch: main
     autoDeploy: true
     buildCommand: pnpm install --frozen-lockfile && pnpm run build:production
-    startCommand: pnpm run start:production
+    startCommand: bash ./scripts/start-pysne.sh
     healthCheckPath: /api/healthz
     envVars:
       - key: NODE_VERSION
         value: "24"
       - key: NODE_ENV
         value: production
+      - key: PYSNE_DB_NAME
+        value: pysne
       - key: SESSION_SECRET
         generateValue: true
       - key: DATABASE_URL
+        fromDatabase:
+          name: szczecin-hunt-db
+          property: connectionString
+      - key: APP_BASE_URL
+        fromService:
+          name: pysnecompl
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        value: admin@pysne.local
+      - key: BOOTSTRAP_ADMIN_NAME
+        value: Admin
+      - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: APP_BASE_URL
         sync: false
