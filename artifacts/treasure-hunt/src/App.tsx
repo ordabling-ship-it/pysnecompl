@@ -7,6 +7,8 @@ import { guestLogin } from "@workspace/api-client-react";
 import NotFound from "@/pages/not-found";
 import AuthScreen from "@/pages/AuthScreen";
 import AppScreen from "@/pages/AppScreen";
+import PodchodyPlay from "@/pages/PodchodyPlay";
+import type { GameSession } from "@/pages/podchody-types";
 
 const AnalyticsScreen = lazy(() => import("@/pages/AnalyticsScreen"));
 
@@ -24,22 +26,9 @@ export type GuestData = {
 };
 
 const GUEST_SESSION_KEY = "th_guest_session";
-const GUEST_TOKEN_KEY = "th_guest_token";
 const TERMS_ACCEPTED_KEY = "pysne_terms_accepted_v1";
-
-// Stable per-browser guest identity (kept for backwards compatibility with the
-// API contract — the server still accepts it but the marker timer is now
-// shared, not per-guest).
-export function getOrCreateGuestToken(): string {
-  let token = localStorage.getItem(GUEST_TOKEN_KEY);
-  if (!token) {
-    token = (typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2) + Date.now().toString(36));
-    localStorage.setItem(GUEST_TOKEN_KEY, token);
-  }
-  return token;
-}
+const GAME_ID_KEY = "pysne_game_id";
+const HIDE_GAME_KEY = "pysne_hide_game";
 
 function getAutoTheme(): "light" | "dark" {
   const h = new Date().getHours();
@@ -55,6 +44,7 @@ function MainApp() {
     layoutPreview ? { id: 0, name: "Podgląd administratora", role: "admin", slug: "podglad", pinBalance: 10 } : null,
   );
   const [guestData, setGuestData] = useState<GuestData | null>(null);
+  const [gameSession, setGameSession] = useState<GameSession | null>(null);
   const [hydrating, setHydrating] = useState(!layoutPreview);
   const [termsAccepted, setTermsAccepted] = useState(() => localStorage.getItem(TERMS_ACCEPTED_KEY) === "true");
 
@@ -74,15 +64,6 @@ function MainApp() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
-
-  // Auto-switch every minute unless the user has manually overridden.
-  useEffect(() => {
-    if (localStorage.getItem("th_theme_manual") === "true") return;
-    const check = () => setTheme(getAutoTheme());
-    check();
-    const id = window.setInterval(check, 60_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const handleToggleTheme = () => {
     setTheme((t) => {
@@ -115,12 +96,25 @@ function MainApp() {
       }
 
       if (routeMode !== "player") return;
+      if (localStorage.getItem(HIDE_GAME_KEY) !== "1") {
+        const savedGameId = sessionStorage.getItem(GAME_ID_KEY);
+        const sessionUrl = savedGameId ? `/api/games/session?gameId=${encodeURIComponent(savedGameId)}` : "/api/games/session";
+        try {
+          const gameResponse = await fetch(sessionUrl, { credentials: "same-origin", headers: { Accept: "application/json" } });
+          if (gameResponse.ok) {
+            const session = await gameResponse.json() as GameSession;
+            if (mounted) setGameSession(session);
+            return;
+          }
+        } catch {
+          // A missing game cookie falls through to a saved treasure code.
+        }
+      }
       const saved = localStorage.getItem(GUEST_SESSION_KEY);
       if (!saved) return;
       try {
         const { code } = JSON.parse(saved) as { code: string };
-        const guestToken = getOrCreateGuestToken();
-        const guest = await guestLogin({ code, guestToken });
+        const guest = await guestLogin({ code });
         if (mounted) setGuestData(guest);
       } catch {
         localStorage.removeItem(GUEST_SESSION_KEY);
@@ -141,6 +135,12 @@ function MainApp() {
   const handleGuestLogin = (data: GuestData) => {
     setGuestData(data);
     localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify({ code: data.code }));
+  };
+
+  const handleJoinGame = (session: GameSession) => {
+    sessionStorage.setItem(GAME_ID_KEY, String(session.gameId));
+    localStorage.removeItem(HIDE_GAME_KEY);
+    setGameSession(session);
   };
 
   const handleLogout = async () => {
@@ -201,11 +201,28 @@ function MainApp() {
     );
   }
 
+  if (!user && gameSession && routeMode === "player") {
+    return (
+      <PodchodyPlay
+        session={gameSession}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        onSession={handleJoinGame}
+        onLeave={() => {
+          localStorage.setItem(HIDE_GAME_KEY, "1");
+          sessionStorage.removeItem(GAME_ID_KEY);
+          setGameSession(null);
+        }}
+      />
+    );
+  }
+
   if (!user && !guestData) {
     return (
       <AuthScreen
         onLoginAdmin={handleAdminLogin}
         onLoginGuest={handleGuestLogin}
+        onJoinGame={handleJoinGame}
         mode={routeMode === "player" ? "player" : "panel"}
         theme={theme}
         onToggleTheme={handleToggleTheme}

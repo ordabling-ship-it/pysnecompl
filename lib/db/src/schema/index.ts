@@ -7,3 +7,4 @@ export * from "./auditLogs";
 export * from "./stripePinPurchases";
 export * from "./accountInvites";
 export * from "./pinTopups";
+export * from "./games";

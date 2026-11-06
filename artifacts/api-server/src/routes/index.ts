@@ -4,11 +4,11 @@ import authRouter from "./auth";
 import markersRouter from "./markers";
 import redemptionsRouter from "./redemptions";
 import statsRouter from "./stats";
-import discoveriesRouter from "./discoveries";
 import controlRouter from "./control";
 import pinPackagesRouter from "./pinPackages";
 import paymentsRouter from "./payments";
 import analyticsRouter from "./analytics";
+import gamesRouter from "./games";
 
 const router: IRouter = Router();
 
@@ -18,9 +18,13 @@ router.use(pinPackagesRouter);
 router.use(markersRouter);
 router.use(redemptionsRouter);
 router.use(statsRouter);
-router.use(discoveriesRouter);
 router.use(controlRouter);
 router.use(paymentsRouter);
 router.use(analyticsRouter);
+router.use(gamesRouter);
+
+router.use((req, res) => {
+  res.status(404).json({ error: "Nie znaleziono." });
+});
 
 export default router;

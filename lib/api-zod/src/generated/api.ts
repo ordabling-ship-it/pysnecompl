@@ -59,6 +59,7 @@ export const AdminLoginResponse = zod.object({
   slug: zod.string().optional(),
   pinBalance: zod.number().optional(),
   firstPurchaseBonusGranted: zod.boolean().optional(),
+  canAccessAnalytics: zod.boolean(),
 });
 
 /**
@@ -66,12 +67,6 @@ export const AdminLoginResponse = zod.object({
  */
 export const GuestLoginBody = zod.object({
   code: zod.string(),
-  guestToken: zod
-    .string()
-    .optional()
-    .describe(
-      "Optional, legacy browser identifier. Server no longer uses it for timer logic (the marker timer is shared across all guests once activated).",
-    ),
 });
 
 export const GuestLoginResponse = zod.object({
@@ -100,7 +95,13 @@ export const ListMarkersResponseItem = zod.object({
   lat: zod.number(),
   lng: zod.number(),
   category: zod.string().nullish(),
-  imageUrl: zod.string().nullable(),
+  imageUrl: zod
+    .string()
+    .nullable()
+    .describe(
+      "Null in the marker list. The single-marker response includes the photo when one was saved.",
+    ),
+  hasImage: zod.boolean(),
   createdAt: zod.string(),
   expiresAt: zod
     .string()
@@ -145,7 +146,13 @@ export const GetMarkerResponse = zod.object({
   lat: zod.number(),
   lng: zod.number(),
   category: zod.string().nullish(),
-  imageUrl: zod.string().nullable(),
+  imageUrl: zod
+    .string()
+    .nullable()
+    .describe(
+      "Null in the marker list. The single-marker response includes the photo when one was saved.",
+    ),
+  hasImage: zod.boolean(),
   createdAt: zod.string(),
   expiresAt: zod
     .string()
@@ -170,38 +177,6 @@ export const DeleteMarkerParams = zod.object({
 });
 
 /**
- * @summary Get a marker by treasure code (for guests)
- */
-export const GetMarkerByCodeParams = zod.object({
-  code: zod.coerce.string(),
-});
-
-export const GetMarkerByCodeResponse = zod.object({
-  id: zod.number(),
-  title: zod.string(),
-  description: zod.string(),
-  code: zod.string(),
-  lat: zod.number(),
-  lng: zod.number(),
-  category: zod.string().nullish(),
-  imageUrl: zod.string().nullable(),
-  createdAt: zod.string(),
-  expiresAt: zod
-    .string()
-    .nullable()
-    .describe(
-      "ISO timestamp when the code expires. Null = timer not started yet.",
-    ),
-  activatedAt: zod
-    .string()
-    .nullable()
-    .describe(
-      "ISO timestamp when the FIRST guest activated the code. Null = not activated yet. Set atomically together with expiresAt.",
-    ),
-  redemptionCount: zod.number(),
-});
-
-/**
  * @summary List redemptions for a user
  */
 export const ListRedemptionsQueryParams = zod.object({
@@ -218,43 +193,6 @@ export const ListRedemptionsResponseItem = zod.object({
 export const ListRedemptionsResponse = zod.array(ListRedemptionsResponseItem);
 
 /**
- * @summary Redeem a treasure code (regular user)
- */
-export const CreateRedemptionBody = zod.object({
-  userId: zod.number(),
-  code: zod.string(),
-});
-
-/**
- * @summary Get the global discoveries counter, last reset date, and 5 most recent activations
- */
-export const GetDiscoveriesResponse = zod.object({
-  count: zod
-    .number()
-    .describe("Number of marker activations since the last reset"),
-  lastResetAt: zod
-    .string()
-    .describe(
-      "ISO timestamp of the last counter reset (defaults to first server start)",
-    ),
-  recent: zod
-    .array(
-      zod.object({
-        code: zod.string(),
-        activatedAt: zod.string(),
-      }),
-    )
-    .describe("5 most recent activations since the last reset, newest first"),
-});
-
-/**
- * @summary Reset the discoveries counter (admin only)
- */
-export const ResetDiscoveriesResponse = zod.object({
-  lastResetAt: zod.string(),
-});
-
-/**
  * @summary Get overall stats (admin view)
  */
 export const GetStatsResponse = zod.object({
@@ -262,4 +200,266 @@ export const GetStatsResponse = zod.object({
   activeMarkers: zod.number(),
   expiredMarkers: zod.number(),
   totalRedemptions: zod.number(),
+});
+
+/**
+ * @summary List the signed-in organizer's games
+ */
+export const ListGamesResponseItem = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  joinCode: zod.string(),
+  createdAt: zod.string(),
+  checkpointCount: zod.number(),
+  playerCount: zod.number(),
+  finishedCount: zod.number(),
+  organizerScore: zod.number(),
+});
+export const ListGamesResponse = zod.array(ListGamesResponseItem);
+
+/**
+ * @summary Publish a Podchody game and charge one pin
+ */
+export const CreateGameBody = zod.object({
+  title: zod.string(),
+  description: zod.string(),
+  checkpoints: zod.array(
+    zod.object({
+      hint: zod.string(),
+      answerCode: zod.string(),
+      lat: zod.number(),
+      lng: zod.number(),
+      imageUrl: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Join a game with its code
+ */
+export const JoinGameBody = zod.object({
+  code: zod.string(),
+  nickname: zod.string(),
+  teamName: zod.string().nullish(),
+});
+
+export const JoinGameResponse = zod.object({
+  gameId: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  nickname: zod.string(),
+  teamName: zod.string().nullable(),
+  organizerName: zod.string(),
+  organizerScore: zod.number(),
+  joinedAt: zod.string(),
+  finishedAt: zod.string().nullable(),
+  durationMs: zod.number().nullable(),
+  finished: zod.boolean(),
+  solvedCount: zod.number(),
+  total: zod.number(),
+  current: zod.union([
+    zod.object({
+      position: zod.number(),
+      hint: zod.string(),
+      imageUrl: zod.string().nullable(),
+      area: zod.object({
+        lat: zod.number(),
+        lng: zod.number(),
+        radiusMeters: zod.number(),
+      }),
+    }),
+    zod.null(),
+  ]),
+  ranking: zod.array(
+    zod.object({
+      place: zod.number(),
+      nickname: zod.string(),
+      teamName: zod.string().nullable(),
+      solvedCount: zod.number(),
+      finished: zod.boolean(),
+      durationMs: zod.number().nullable(),
+    }),
+  ),
+  myRating: zod.number().nullable(),
+});
+
+/**
+ * @summary Current player session
+ */
+export const GetGameSessionQueryParams = zod.object({
+  gameId: zod.coerce.number().optional(),
+});
+
+export const GetGameSessionResponse = zod.object({
+  gameId: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  nickname: zod.string(),
+  teamName: zod.string().nullable(),
+  organizerName: zod.string(),
+  organizerScore: zod.number(),
+  joinedAt: zod.string(),
+  finishedAt: zod.string().nullable(),
+  durationMs: zod.number().nullable(),
+  finished: zod.boolean(),
+  solvedCount: zod.number(),
+  total: zod.number(),
+  current: zod.union([
+    zod.object({
+      position: zod.number(),
+      hint: zod.string(),
+      imageUrl: zod.string().nullable(),
+      area: zod.object({
+        lat: zod.number(),
+        lng: zod.number(),
+        radiusMeters: zod.number(),
+      }),
+    }),
+    zod.null(),
+  ]),
+  ranking: zod.array(
+    zod.object({
+      place: zod.number(),
+      nickname: zod.string(),
+      teamName: zod.string().nullable(),
+      solvedCount: zod.number(),
+      finished: zod.boolean(),
+      durationMs: zod.number().nullable(),
+    }),
+  ),
+  myRating: zod.number().nullable(),
+});
+
+/**
+ * @summary Submit the current checkpoint code
+ */
+export const AttemptCheckpointBody = zod.object({
+  gameId: zod.number(),
+  answer: zod.string(),
+});
+
+export const AttemptCheckpointResponse = zod.object({
+  gameId: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  nickname: zod.string(),
+  teamName: zod.string().nullable(),
+  organizerName: zod.string(),
+  organizerScore: zod.number(),
+  joinedAt: zod.string(),
+  finishedAt: zod.string().nullable(),
+  durationMs: zod.number().nullable(),
+  finished: zod.boolean(),
+  solvedCount: zod.number(),
+  total: zod.number(),
+  current: zod.union([
+    zod.object({
+      position: zod.number(),
+      hint: zod.string(),
+      imageUrl: zod.string().nullable(),
+      area: zod.object({
+        lat: zod.number(),
+        lng: zod.number(),
+        radiusMeters: zod.number(),
+      }),
+    }),
+    zod.null(),
+  ]),
+  ranking: zod.array(
+    zod.object({
+      place: zod.number(),
+      nickname: zod.string(),
+      teamName: zod.string().nullable(),
+      solvedCount: zod.number(),
+      finished: zod.boolean(),
+      durationMs: zod.number().nullable(),
+    }),
+  ),
+  myRating: zod.number().nullable(),
+});
+
+/**
+ * @summary Rate the organizer once after finishing
+ */
+export const RateOrganizerBody = zod.object({
+  gameId: zod.number(),
+  value: zod.union([zod.literal(1), zod.literal(-1)]),
+});
+
+export const RateOrganizerResponse = zod.object({
+  gameId: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  nickname: zod.string(),
+  teamName: zod.string().nullable(),
+  organizerName: zod.string(),
+  organizerScore: zod.number(),
+  joinedAt: zod.string(),
+  finishedAt: zod.string().nullable(),
+  durationMs: zod.number().nullable(),
+  finished: zod.boolean(),
+  solvedCount: zod.number(),
+  total: zod.number(),
+  current: zod.union([
+    zod.object({
+      position: zod.number(),
+      hint: zod.string(),
+      imageUrl: zod.string().nullable(),
+      area: zod.object({
+        lat: zod.number(),
+        lng: zod.number(),
+        radiusMeters: zod.number(),
+      }),
+    }),
+    zod.null(),
+  ]),
+  ranking: zod.array(
+    zod.object({
+      place: zod.number(),
+      nickname: zod.string(),
+      teamName: zod.string().nullable(),
+      solvedCount: zod.number(),
+      finished: zod.boolean(),
+      durationMs: zod.number().nullable(),
+    }),
+  ),
+  myRating: zod.number().nullable(),
+});
+
+/**
+ * @summary Organizer view of one game, including checkpoint answers
+ */
+export const GetGameParams = zod.object({
+  gameId: zod.coerce.number(),
+});
+
+export const GetGameResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  joinCode: zod.string(),
+  createdAt: zod.string(),
+  organizerScore: zod.number(),
+  checkpoints: zod.array(
+    zod.object({
+      id: zod.number(),
+      position: zod.number(),
+      hint: zod.string(),
+      lat: zod.number(),
+      lng: zod.number(),
+      answerCode: zod.string(),
+      hasImage: zod.boolean(),
+    }),
+  ),
+  ranking: zod.array(
+    zod.object({
+      place: zod.number(),
+      nickname: zod.string(),
+      teamName: zod.string().nullable(),
+      solvedCount: zod.number(),
+      finished: zod.boolean(),
+      durationMs: zod.number().nullable(),
+    }),
+  ),
 });

@@ -25,8 +25,9 @@ A full-stack geo-treasure hunt web app for Szczecin, Poland. Admins hide treasur
 
 ## Roles
 
-- **Admin** — can add/delete treasures, see all markers on map with codes. Login: `czosnek` / `Aszwarganda666!@#`
-- **Guest** — enters a treasure code, sees that one treasure on map. Codes: TRX7K, SCZ2M, JKB9Q, ZMK4F (all expire 1h from seed time)
+- **Kreator (admin)** — ukrywa skarby i publikuje gry Podchody. Logowanie jest tylko przez konto w bazie; haseł nie trzymamy w repozytorium.
+- **Moderator i master admin** — opiekują się kontami. Analityka jest dostępna dla tych ról.
+- **Uczestnik** — nie ma konta. Wpisuje kod skarbu albo dołącza do gry Podchody nickiem.
 
 ## Key Commands
 
@@ -58,20 +59,15 @@ The application has exactly **one** countdown timer: the 60-minute marker code t
 
 The frontend persists `{ code }` under `th_guest_session` so a page refresh re-fetches the same shared timer.
 
-## Known security posture
+## Bezpieczeństwo
 
-All admin-only routes (POST/DELETE `/markers`, `/stats`, `/discoveries`, `/discoveries/reset`) are currently unauthenticated at the API layer — admin gating is enforced only on the client. This matches the existing app's posture and is acceptable for the current single-tenant, demo-style deployment, but a future hardening pass should add a session-based `requireAdmin` middleware uniformly across all admin endpoints.
+Trasy administratora wymagają podpisanej sesji. `requireAdmin` jest podpięte do konkretnych ścieżek, a nieznane adresy `/api` zwracają JSON 404. Próby kodów skarbu i kodów gier są limitowane per IP. Serwer ustawia nagłówki `nosniff`, `X-Frame-Options`, `frame-ancestors` oraz CSP zgodne z kafelkami OSM i przekierowaniem do Stripe. HSTS jest włączone w produkcji. Analityka zależy od roli `master_admin` albo `moderator`.
 
-## Admin credentials
+Hasła i przykładowe kody nie są zapisywane w tym pliku. Zmianę hasła robi właściciel konta poza repozytorium.
 
-- Username: `czosnek` / Password: `Aszwarganda666!@#`
+## Podchody
 
-## Sample treasure codes (seeded at startup, expire 1h after seeding)
+Organizator publikuje grę z 2–10 punktami. Publikacja zużywa jedną pinezkę (saldo Kreatora, ten sam próg 402 i pakiety Stripe co przy skarbie). Uczestnik dołącza pięcioznakowym kodem, widzi tylko bieżący punkt jako przybliżony obszar i po poprawnym kodzie dostaje następny. Po mecie może raz ocenić organizatora kciukiem w górę albo w dół. Wynik organizatora to suma tych ocen.
 
-- `TRX7K` — Brama Portowa
-- `SCZ2M` — Wały Chrobrego
-- `JKB9Q` — Katedra św. Jakuba
-- `ZMK4F` — Zamek Książąt Pom.
-- `PGR8X` — Plac Grunwaldzki (expired test marker)
+Tabele `guest_discoveries` i `settings` zostają w bazie. Aplikacja nie korzysta już ze starych ścieżek odkryć ani z identyfikatora gościa w przeglądarce.
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
